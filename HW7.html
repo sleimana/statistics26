@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW7 · Modes of convergence and Bayesian inference</title>
+<style>
+:root{
+  --bg:#2b2d31; --slide:#fffdf9; --ink:#1f1f1f; --muted:#6e6a63; --or:#ef6c00; --or2:#fff0e0; --blue:#1565c0; --line:#ece6dc;
+  --plot-fg:#333; --plot-grid:rgba(0,0,0,.08); --plot-bg:#fffdf9;
+  --c1:#ef6c00; --c2:#1565c0; --c3:#2e7d32; --c4:#ad1457; --c5:#6d4c41; --c6:#00838f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);font:17px/1.55 "Segoe UI",system-ui,sans-serif;color:var(--ink)}
+.deck{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px}
+.slide{display:none;width:min(1240px,100%);height:min(calc(100vh - 80px),780px);background:var(--slide);border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.45);padding:34px 46px;overflow:auto;position:relative}
+.slide.on{display:block;animation:in .25s ease}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.slide h1{font-size:46px;margin:80px 0 10px;line-height:1.1}
+.slide h2{font-size:30px;margin:0 0 6px}
+.slide h2 small{font-size:15px;color:var(--muted);font-weight:400;margin-left:10px}
+.tag{display:inline-block;background:var(--or);color:#fff;font-weight:800;font-size:12px;letter-spacing:1px;border-radius:5px;padding:3px 9px;margin-bottom:12px}
+.lead{color:var(--muted);font-size:18px;margin:0 0 14px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.cols3{display:grid;grid-template-columns:1.1fr 1fr;gap:22px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--or2);color:#8a3b00;font-size:13px;text-transform:uppercase;letter-spacing:.6px}
+.f{font-family:Cambria,"Cambria Math","Times New Roman",serif;font-size:18px}
+.box{background:var(--or2);border-left:5px solid var(--or);border-radius:8px;padding:10px 16px;margin:10px 0}
+.box.blue{background:#e8f0fb;border-color:var(--blue)}
+canvas{width:100%;height:290px;display:block}
+.ctrl{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:6px 0 10px;font-size:13px}
+.ctrl label{display:flex;flex-direction:column;color:var(--muted)}
+.ctrl select,.ctrl input[type=number]{font:14px system-ui;padding:5px 7px;border:1px solid #d8d0c2;border-radius:6px}
+.ctrl output{font-weight:700;color:var(--ink)}
+button.b{background:var(--or);color:#fff;border:none;border-radius:7px;padding:7px 14px;font-weight:700;cursor:pointer}
+button.g{background:#fff;color:var(--or);border:1.5px solid var(--or);border-radius:7px;padding:6px 12px;font-weight:700;cursor:pointer}
+.bar{width:min(1240px,100%);display:flex;align-items:center;gap:12px;margin-top:12px;color:#c9c9c9;font-size:13px}
+.bar .prog{flex:1;height:5px;background:#44464c;border-radius:5px;overflow:hidden}
+.bar .prog div{height:100%;background:var(--or);transition:width .25s}
+.bar button{background:#3c3e44;color:#fff;border:none;border-radius:7px;padding:7px 13px;cursor:pointer;font-weight:700}
+.small{font-size:14px;color:var(--muted)}
+.num{font-size:36px;font-weight:800;color:var(--or)}
+ul{margin:6px 0 10px 0;padding-left:22px} li{margin:4px 0}
+.icons{width:100%;height:250px}
+@media(max-width:900px){.cols,.cols3{grid-template-columns:1fr}.slide{padding:22px;height:auto;min-height:calc(100vh - 80px)}.slide h1{font-size:32px;margin-top:30px}}
+@media print{body{background:#fff}.deck{height:auto;display:block}.slide{display:block!important;height:auto;box-shadow:none;page-break-after:always}.bar{display:none}}
+</style>
+</head>
+<body>
+<div class="deck">
+
+<section class="slide" data-init="">
+  <span class="tag">HOMEWORK 7</span>
+  <h1>Limits and beliefs</h1>
+  <p class="lead" style="font-size:22px">Part 1 — modes of convergence, the LLN, the CLT and the role of √n.<br>Part 2 — conditional probability, Bayes' theorem and statistical inference.</p>
+  <p class="small">Student: <span contenteditable="true">your name</span> · ID <span contenteditable="true">0000000</span></p>
+  <div class="box" style="margin-top:40px;max-width:720px">Use ← → (or the buttons below) to move between slides. Every chart is a live simulation; change the controls and re-run. Press <b>P</b> to print all slides.</div>
+</section>
+
+<section class="slide">
+  <span class="tag">PART 1 · CONVERGENCE</span>
+  <h2>Four meanings of "X<sub>n</sub> → X"</h2>
+  <p class="lead">A random variable is a function X(ω) of the outcome ω, so "getting close" can be measured per outcome, in probability, on average, or only through the distribution.</p>
+  <table>
+    <tr><th>mode</th><th>definition</th><th>what it controls</th><th>typical use</th></tr>
+    <tr><td><b>almost surely</b> (a.s.)</td><td class="f">P( lim<sub>n</sub> X<sub>n</sub> = X ) = 1</td><td>every single path eventually stays close (except a null set)</td><td>strong LLN, consistency of estimators path by path</td></tr>
+    <tr><td><b>in probability</b></td><td class="f">∀ε&gt;0: P(|X<sub>n</sub> − X| &gt; ε) → 0</td><td>at each large n a big deviation is unlikely, but rare deviations may keep coming</td><td>weak LLN, consistency, Slutsky</td></tr>
+    <tr><td><b>in mean square</b> (L²)</td><td class="f">E[(X<sub>n</sub> − X)²] → 0</td><td>the size of the errors, not only their probability: rare huge errors are not allowed</td><td>MSE of estimators, Chebyshev arguments, signal processing</td></tr>
+    <tr><td><b>in distribution</b></td><td class="f">F<sub>X<sub>n</sub></sub>(x) → F<sub>X</sub>(x) at continuity points</td><td>only the shape of the law; X<sub>n</sub> and X need not be close, or even defined together</td><td>CLT, asymptotic tests and confidence intervals</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <span class="tag">PART 1 · CONVERGENCE</span>
+  <h2>How the modes relate</h2>
+  <div class="cols">
+    <svg viewBox="0 0 520 330" style="width:100%">
+      <defs><marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#ef6c00"/></marker></defs>
+      <g font-family="Segoe UI" font-size="16" font-weight="700" text-anchor="middle">
+        <rect x="20" y="40" width="150" height="54" rx="10" fill="#fff0e0" stroke="#ef6c00"/><text x="95" y="73">almost surely</text>
+        <rect x="20" y="230" width="150" height="54" rx="10" fill="#fff0e0" stroke="#ef6c00"/><text x="95" y="263">mean square L²</text>
+        <rect x="200" y="135" width="140" height="54" rx="10" fill="#fff0e0" stroke="#ef6c00"/><text x="270" y="168">in probability</text>
+        <rect x="370" y="135" width="140" height="54" rx="10" fill="#e8f0fb" stroke="#1565c0"/><text x="440" y="168">in distribution</text>
+      </g>
+      <g stroke="#ef6c00" stroke-width="2.5" fill="none" marker-end="url(#ar)">
+        <path d="M170 75 L230 133"/><path d="M170 250 L230 192"/><path d="M340 162 L368 162"/>
+      </g>
+      <g stroke="#1565c0" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#ar)"><path d="M440 192 C440 300 300 300 285 192"/></g>
+      <g font-family="Segoe UI" font-size="12" fill="#555">
+        <text x="210" y="95">a.s. ⇒ P</text><text x="210" y="240">Chebyshev/Markov</text><text x="335" y="128">P ⇒ d</text>
+        <text x="300" y="315">d ⇒ P only if the limit is a constant</text>
+      </g>
+    </svg>
+    <div>
+      <ul>
+        <li><b>a.s. ⇒ P</b>: if the paths eventually stay within ε, the probability of being outside at time n vanishes (dominated convergence).</li>
+        <li><b>L² ⇒ P</b>: Chebyshev, P(|X<sub>n</sub> − X| &gt; ε) ≤ E[(X<sub>n</sub> − X)²]/ε².</li>
+        <li><b>P ⇒ d</b>: if X<sub>n</sub> is close to X with high probability, their CDFs are close.</li>
+        <li><b>d ⇒ P</b> holds only when the limit is a constant c (used in Slutsky's theorem).</li>
+        <li>No other implication holds in general. The next three slides show counterexamples by simulation: P ⇏ a.s., P ⇏ L², d ⇏ P. a.s. and L² do not imply each other.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoAS">
+  <span class="tag">COUNTEREXAMPLE 1</span>
+  <h2>In probability, but not almost surely <small>independent X<sub>n</sub> ~ Bernoulli(p<sub>n</sub>)</small></h2>
+  <div class="cols3">
+    <div><div class="ctrl"><label>paths <input type="number" id="asM" value="25" min="5" max="60"></label><label>horizon N <select id="asN"><option>1000</option><option selected>10000</option><option>100000</option></select></label><button class="b" id="asGo">Simulate</button></div>
+      <canvas id="cas1" style="height:230px"></canvas><canvas id="cas2" style="height:230px"></canvas></div>
+    <div>
+      <p>Each dot is a time n with X<sub>n</sub> = 1 on that path.</p>
+      <div class="box"><b>p<sub>n</sub> = 1/n:</b> P(|X<sub>n</sub>| &gt; ε) = 1/n → 0, so X<sub>n</sub> → 0 <i>in probability</i>. But Σ 1/n = ∞, and by the second Borel–Cantelli lemma (independence) X<sub>n</sub> = 1 <b>infinitely often</b> on almost every path. The paths never settle, so there is no a.s. convergence. Ones keep appearing at every scale (about ln N per path).</div>
+      <div class="box blue"><b>p<sub>n</sub> = 1/n²:</b> Σ 1/n² &lt; ∞, so by the first Borel–Cantelli lemma only finitely many ones occur. After a random time every path is 0 forever: <b>a.s. convergence</b>.</div>
+      <p id="asTxt" class="small"></p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoL2">
+  <span class="tag">COUNTEREXAMPLE 2</span>
+  <h2>In probability, but not in mean square <small>X<sub>n</sub> = n with probability 1/n, else 0</small></h2>
+  <div class="cols">
+    <div><div class="ctrl"><label>samples per n <input type="number" id="l2M" value="200000"></label><button class="b" id="l2Go">Simulate</button></div><canvas id="cl2"></canvas></div>
+    <div>
+      <p class="f">P(|X<sub>n</sub>| &gt; ε) = 1/n → 0 &nbsp;&nbsp; but &nbsp;&nbsp; E[X<sub>n</sub>²] = n² · (1/n) = n → ∞</p>
+      <p>The deviation becomes <i>rare</i> but <i>huge</i>. Convergence in probability ignores how big the rare errors are. Mean-square convergence does not. With Y<sub>n</sub> = √n·𝟙 (same probability) E[Y<sub>n</sub>²] = 1 does not tend to 0 either, while Z<sub>n</sub> = 1 with probability 1/n has E[Z<sub>n</sub>²] = 1/n → 0. Bounded or uniformly integrable sequences are the ones for which "in probability" upgrades to L<sup>p</sup>.</p>
+      <div id="l2tab"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoD">
+  <span class="tag">COUNTEREXAMPLE 3</span>
+  <h2>In distribution, but not in probability <small>X ~ N(0,1), X<sub>n</sub> = −X for every n</small></h2>
+  <div class="cols">
+    <div><canvas id="cd1" style="height:250px"></canvas><canvas id="cd2" style="height:250px"></canvas></div>
+    <div>
+      <p>By symmetry −X ~ N(0,1), so F<sub>X<sub>n</sub></sub> = F<sub>X</sub> for every n: X<sub>n</sub> → X <b>in distribution</b> trivially. Yet |X<sub>n</sub> − X| = 2|X| for every n, so P(|X<sub>n</sub> − X| &gt; ε) = P(|X| &gt; ε/2) does not depend on n and does not vanish: no convergence in probability.</p>
+      <div class="box">Convergence in distribution compares <b>histograms</b>, never <b>outcomes</b>. That is exactly what the CLT needs: it says the <i>law</i> of the standardised mean becomes normal. It does not say that the standardised mean of a given data stream settles down to some value.</div>
+      <p id="dTxt" class="small"></p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoLLN">
+  <span class="tag">ROLE IN THE LLN</span>
+  <h2>Law of Large Numbers: X̄<sub>n</sub> → μ</h2>
+  <div class="cols3">
+    <div><div class="ctrl"><label>distribution <select id="llnD"><option value="exp">Exponential(1)</option><option value="unif">Uniform(0,1)</option><option value="bern">Bernoulli(0.3)</option><option value="cauchy">Cauchy (no mean!)</option></select></label><label>ε <input type="number" id="llnE" value="0.1" step="0.05" style="width:70px"></label><button class="b" id="llnGo">Simulate</button></div>
+      <canvas id="clln1" style="height:250px"></canvas><canvas id="clln2" style="height:210px"></canvas></div>
+    <div>
+      <p><b>Weak LLN</b> (convergence <i>in probability</i>). If Var X = σ² &lt; ∞, then Var X̄<sub>n</sub> = σ²/n, and Chebyshev gives</p>
+      <p class="f">P(|X̄<sub>n</sub> − μ| &gt; ε) ≤ σ² / (n ε²) → 0.</p>
+      <p>The same computation is <i>L²</i> convergence: E(X̄<sub>n</sub> − μ)² = σ²/n → 0.</p>
+      <p><b>Strong LLN</b> (Kolmogorov, <i>almost sure</i>). For i.i.d. X with E|X| &lt; ∞, each path X̄<sub>n</sub>(ω) converges to μ. Top chart: every path enters the band and stays. Bottom chart: the share of paths outside the band at time n, the weak-LLN probability.</p>
+      <p>With Cauchy data, E|X| = ∞ and X̄<sub>n</sub> is again Cauchy for every n. There is no LLN: big jumps keep resetting the paths.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoCLT">
+  <span class="tag">ROLE IN THE CLT</span>
+  <h2>Central Limit Theorem: √n (X̄<sub>n</sub> − μ)/σ ⇒ N(0,1)</h2>
+  <div class="cols3">
+    <div><div class="ctrl"><label>distribution <select id="cltD"><option value="exp">Exponential(1), skewed</option><option value="bern">Bernoulli(0.1), discrete</option><option value="unif">Uniform(0,1)</option><option value="lognorm">Log-normal(0,1), heavy right tail</option></select></label><label>n <output id="cltNv">5</output><input type="range" id="cltN" min="0" max="3" step="0.05" value="0.7"></label><button class="b" id="cltGo">Simulate 20 000 means</button></div>
+      <canvas id="cclt" style="height:300px"></canvas><canvas id="cclt2" style="height:170px"></canvas></div>
+    <div>
+      <p>Lindeberg–Lévy: for i.i.d. X with mean μ and finite variance σ², the standardised mean Z<sub>n</sub> = √n(X̄<sub>n</sub> − μ)/σ converges <b>in distribution</b> to N(0,1), whatever the shape of X.</p>
+      <p>The speed depends on skewness. Berry–Esseen gives sup|F<sub>n</sub> − Φ| ≤ 0.4748·E|X−μ|³/(σ³√n), so skewed or discrete data need larger n. The lower chart shows the measured Kolmogorov distance against n.</p>
+      <div class="box">Convergence is <i>only</i> in distribution: on one data stream Z<sub>n</sub> and Z<sub>2n</sub> have correlation 1/√2 for every n, so Z<sub>n</sub>(ω) keeps fluctuating and never converges. What stabilises is the histogram over many streams. That is why the CLT justifies <b>confidence intervals and tests</b> (statements about the procedure), not predictions about one realisation.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoSqrt">
+  <span class="tag">THE ROLE OF √n</span>
+  <h2>Why √n? Because independent variances add</h2>
+  <div class="cols3">
+    <div><div class="ctrl"><label>AR(1) correlation ρ <output id="rhoV">0.6</output><input type="range" id="rho" min="-0.8" max="0.95" step="0.05" value="0.6"></label><label>common-shock correlation c <output id="cV">0.05</output><input type="range" id="cc" min="0" max="0.3" step="0.01" value="0.05"></label><button class="b" id="sqGo">Simulate</button></div>
+      <canvas id="csq" style="height:330px"></canvas></div>
+    <div>
+      <p class="f">Var(S<sub>n</sub>) = Σ<sub>i</sub> Var X<sub>i</sub> + 2 Σ<sub>i&lt;j</sub> Cov(X<sub>i</sub>, X<sub>j</sub>)</p>
+      <p>If the X<sub>i</sub> are independent (uncorrelated is enough), the covariances vanish, Var S<sub>n</sub> = nσ², and the <b>standard deviation grows like σ√n</b>. Consequences:</p>
+      <ul><li>S<sub>n</sub>/n has sd σ/√n → 0: the <b>LLN</b> scale (1/n is "too strong", it kills the randomness).</li>
+      <li>S<sub>n</sub>/√n has sd σ for every n: the only scaling with a non-degenerate limit, the <b>CLT</b> scale.</li>
+      <li>The standard error σ/√n: to halve the error you need four times the data.</li></ul>
+      <p>When independence fails, √n is no longer the right rate. Positive serial correlation (AR(1)) keeps the √n <i>rate</i> but inflates the constant by √((1+ρ)/(1−ρ)), so a naive standard error is too small. A common shock shared by all observations (equicorrelation c) gives Var S<sub>n</sub> = nσ² + n(n−1)cσ² ~ n², and averaging never removes it. With infinite variance (Cauchy) the scale is n<sup>1/α</sup>, not √n.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <span class="tag">PART 2 · BAYES</span>
+  <h2>Conditional probability and Bayes' theorem</h2>
+  <div class="cols">
+    <div>
+      <p class="f">P(A | B) = P(A ∩ B) / P(B), &nbsp; P(B) &gt; 0</p>
+      <p>Conditioning <i>restricts the sample space</i> to the outcomes where B happened and renormalises. Writing P(A ∩ B) in two ways gives Bayes' theorem. With a partition {H<sub>k</sub>} (law of total probability):</p>
+      <p class="f">P(H | D) = P(D | H) · P(H) / P(D), &nbsp;&nbsp; P(D) = Σ<sub>k</sub> P(D | H<sub>k</sub>) P(H<sub>k</sub>)</p>
+      <table><tr><th>term</th><th>meaning</th></tr>
+        <tr><td><b>prior</b> P(H)</td><td>belief about the hypothesis before seeing the data</td></tr>
+        <tr><td><b>likelihood</b> P(D | H)</td><td>how well H predicts the observed data (a function of H)</td></tr>
+        <tr><td><b>evidence</b> P(D)</td><td>normalising constant: the probability of D averaged over all hypotheses</td></tr>
+        <tr><td><b>posterior</b> P(H | D)</td><td>updated belief after the data</td></tr></table>
+    </div>
+    <div>
+      <div class="box"><b>Odds form:</b> posterior odds = likelihood ratio × prior odds. Every new independent piece of evidence multiplies the odds by its own likelihood ratio, so <b>the posterior of today is the prior of tomorrow</b>.</div>
+      <div class="box blue"><b>For a parameter θ</b> with data x: π(θ | x) ∝ L(θ; x) · π(θ). Inference is then a probability distribution over θ. Its mean or mode gives a point estimate, its quantiles give a credible interval, and integrals give the probability of any hypothesis such as P(θ &gt; 0.1 | x).</div>
+      <p>Contrast with frequentist inference: there θ is fixed and probabilities refer to repeated samples (p-values, confidence intervals, the CLT of Part 1). In Bayesian inference the data are fixed and the uncertainty is about θ.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoBase">
+  <span class="tag">EXAMPLE 1 · BASE RATES</span>
+  <h2>An intrusion-detection alert: how worried should we be?</h2>
+  <div class="cols">
+    <div><div class="ctrl">
+      <label>prior: share of malicious events <output id="piV"></output><input type="range" id="pi" min="-4" max="-0.3" step="0.05" value="-2"></label>
+      <label>sensitivity P(alert | attack) <output id="seV"></output><input type="range" id="se" min="0.5" max="0.999" step="0.001" value="0.99"></label>
+      <label>false-positive rate P(alert | benign) <output id="fpV"></output><input type="range" id="fp" min="-4" max="-0.5" step="0.05" value="-1.7"></label></div>
+      <canvas id="cicons" class="icons"></canvas><p class="small">10 000 events: ■ attack caught · ■ attack missed · ■ false alarm · □ quiet benign (shown at 1:10)</p></div>
+    <div>
+      <div class="num" id="ppv"></div><p class="small">P(attack | alert), the posterior</p>
+      <p id="baseTxt"></p>
+      <div id="seqtab"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-init="demoBeta">
+  <span class="tag">EXAMPLE 2 · LEARNING A PARAMETER</span>
+  <h2>What fraction θ of staff click a phishing link? <small>Beta–Binomial model</small></h2>
+  <div class="cols3">
+    <div><div class="ctrl">
+      <label>prior a <input type="number" id="ba" value="2" step="0.5" style="width:70px"></label><label>prior b <input type="number" id="bb" value="18" step="0.5" style="width:70px"></label>
+      <label>clicks k <input type="number" id="bk" value="9" style="width:70px"></label><label>emails n <input type="number" id="bn" value="40" style="width:70px"></label>
+      <button class="g" id="bWeak">flat prior</button><button class="g" id="bStrong">strong prior</button><button class="b" id="bStream">stream data (θ = 0.25)</button></div>
+      <canvas id="cbeta" style="height:330px"></canvas></div>
+    <div>
+      <p class="f">θ ~ Beta(a, b), &nbsp; k | θ ~ Bin(n, θ) &nbsp;⇒&nbsp; θ | k ~ Beta(a + k, b + n − k)</p>
+      <p>The prior acts like <b>a + b pseudo-observations</b>, a of them clicks. The posterior mean (a + k)/(a + b + n) is a weighted average of the prior mean and the sample proportion k/n. The data's weight n/(a+b+n) → 1 as n grows.</p>
+      <div id="betaTxt" class="box"></div>
+      <p class="small">"Stream data" adds simulated emails one batch at a time. The posterior narrows like 1/√n around the true θ: the Bernstein–von Mises theorem, Part 1's √n reappearing in Bayesian inference.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <span class="tag">PART 2 · DISCUSSION</span>
+  <h2>Bayesian inference: strengths, limits and the influence of the prior</h2>
+  <div class="cols">
+    <div>
+      <h3 style="color:var(--c3)">Advantages</h3>
+      <ul>
+        <li><b>Coherent updating</b>: one rule (Bayes) for combining evidence. It is naturally sequential, which suits streams of alerts and logs.</li>
+        <li><b>Uses prior knowledge</b>: base rates, expert judgement and past campaigns. This is decisive when data are scarce (rare attacks, new threats).</li>
+        <li><b>Direct answers</b>: "P(attack | alert) = 9%" and "θ ∈ [0.14, 0.31] with probability 95%" are statements about what we care about, unlike p-values.</li>
+        <li><b>Decision-ready</b>: posteriors combine with costs (expected loss) to set alert thresholds.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--c4)">Limitations</h3>
+      <ul>
+        <li><b>Prior choice</b> is a modelling decision that can be contested. With little data it drives the conclusion (try "strong prior" on the previous slide with n = 5).</li>
+        <li><b>Sensitivity analysis</b> is required: report how conclusions change under reasonable priors.</li>
+        <li><b>Computation</b>: beyond conjugate models, posteriors need MCMC or variational methods.</li>
+        <li><b>Model misspecification</b> is not fixed by Bayes: a wrong likelihood gives a confident wrong posterior.</li>
+        <li><b>Base-rate neglect</b> by humans (previous slide): even with the right formula, results are counter-intuitive and must be explained.</li>
+      </ul>
+      <div class="box">As n → ∞ the likelihood dominates any prior that does not exclude the truth, and the posterior concentrates at rate 1/√n around the true value (posterior consistency). The two parts meet here: Bayesian learning is itself a convergence theorem.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <span class="tag">SUMMARY</span>
+  <h2>Take-aways</h2>
+  <div class="cols">
+    <ul style="font-size:19px">
+      <li>a.s. and L² each imply convergence in probability, which implies convergence in distribution. The converses fail (Borel–Cantelli, rare huge errors, X<sub>n</sub> = −X).</li>
+      <li>LLN: X̄<sub>n</sub> → μ in probability (weak) and almost surely (strong), at rate σ/√n.</li>
+      <li>CLT: √n(X̄<sub>n</sub> − μ)/σ → N(0,1) <i>in distribution only</i>.</li>
+      <li>√n comes from adding independent variances. Correlation changes the constant or even the rate.</li>
+    </ul>
+    <ul style="font-size:19px">
+      <li>Bayes: posterior ∝ likelihood × prior; the posterior odds are the prior odds times the likelihood ratio.</li>
+      <li>Base rates matter: a 99%-sensitive detector can still produce mostly false alarms.</li>
+      <li>Conjugate updating (Beta–Binomial) shows the prior as pseudo-data whose weight fades as n grows.</li>
+      <li>Priors are a strength when they encode real knowledge and a risk when they don't, so always check sensitivity.</li>
+    </ul>
+  </div>
+</section>
+
+  <div class="bar"><button id="prev">←</button><span id="count"></span><div class="prog"><div id="progbar"></div></div><button id="next">→</button></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+// ---------------- deck engine ----------------
+const slides = [...document.querySelectorAll(".slide")];
+const done = new Set();
+let cur = Math.min(slides.length - 1, Math.max(0, (parseInt(location.hash.slice(2)) || 1) - 1));
+function show(i) {
+  cur = Math.max(0, Math.min(slides.length - 1, i));
+  slides.forEach((s, j) => s.classList.toggle("on", j === cur));
+  $("count").textContent = `${cur + 1} / ${slides.length}`;
+  $("progbar").style.width = (100 * (cur + 1)) / slides.length + "%";
+  history.replaceState(null, "", "#s" + (cur + 1));
+  const fn = slides[cur].dataset.init;
+  if (fn && !done.has(cur)) { done.add(cur); requestAnimationFrame(() => window[fn]()); }
+}
+$("prev").onclick = () => show(cur - 1); $("next").onclick = () => show(cur + 1);
+window.addEventListener("hashchange", () => { const k = parseInt(location.hash.slice(2)); if (k && k - 1 !== cur) show(k - 1); });
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); show(cur + 1); }
+  if (e.key === "ArrowLeft" || e.key === "PageUp") show(cur - 1);
+  if (e.key === "p" || e.key === "P") { slides.forEach((s, j) => { if (s.dataset.init && !done.has(j)) { s.classList.add("on"); done.add(j); window[s.dataset.init](); } }); setTimeout(() => print(), 300); }
+});
+
+// ---------------- samplers ----------------
+const SAMP = {
+  exp: { mu: 1, sd: 1, f: (r) => -Math.log(1 - r()) },
+  unif: { mu: 0.5, sd: Math.sqrt(1 / 12), f: (r) => r() },
+  bern: { mu: 0.3, sd: Math.sqrt(0.21), f: (r) => (r() < 0.3 ? 1 : 0) },
+  bern01: { mu: 0.1, sd: 0.3, f: (r) => (r() < 0.1 ? 1 : 0) },
+  cauchy: { mu: 0, sd: NaN, f: (r) => Math.tan(Math.PI * (r() - 0.5)) },
+  lognorm: { mu: Math.exp(0.5), sd: Math.sqrt((Math.E - 1) * Math.E), f: (r) => Math.exp(r.normal()) },
+};
+
+// D1: a.s. vs in probability
+function demoAS() {
+  const M = Math.min(60, Math.max(5, +$("asM").value | 0)), N = +$("asN").value, rng = makeRng(11);
+  const pts = (pf) => { const xs = [], ys = []; let total = 0, late = 0; for (let j = 0; j < M; j++) for (let n = 1; n <= N; n++) if (rng() < pf(n)) { xs.push(n); ys.push(j + 1); total++; if (n > N / 10) late++; } return { xs, ys, total, late }; };
+  const A = pts((n) => 1 / n), B = pts((n) => 1 / (n * n));
+  Plot.line($("cas1"), { series: [{ x: A.xs, y: A.ys, points: true, r: 2.6, label: "pₙ = 1/n: ones at all scales" }], xlog: true, xr: [1, N], yr: [0, M + 1], ylabel: "path", title: "X_n = 1 events, pₙ = 1/n" });
+  Plot.line($("cas2"), { series: [{ x: B.xs, y: B.ys, points: true, r: 2.6, label: "pₙ = 1/n²: only early ones", color: Plot.css("--c2") }], xlog: true, xr: [1, N], yr: [0, M + 1], ylabel: "path", xlabel: "n (log scale)", title: "X_n = 1 events, pₙ = 1/n²" });
+  $("asTxt").textContent = `Per path, pₙ = 1/n: ${(A.total / M).toFixed(1)} ones on average (theory H_N ≈ ${(Math.log(N) + 0.577).toFixed(1)}), ${(A.late / M).toFixed(2)} of them after n = ${N / 10} (theory ln 10 ≈ 2.30). pₙ = 1/n²: ${(B.total / M).toFixed(2)} ones (theory π²/6 ≈ 1.64), ${B.late} after n = ${N / 10} in all ${M} paths.`;
+}
+$("asGo").onclick = demoAS;
+
+// D2: probability vs L2
+function demoL2() {
+  const M = Math.max(1000, +$("l2M").value | 0), rng = makeRng(5), ns = [2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const rows = ns.map((n) => { let hit = 0, m2 = 0; for (let i = 0; i < M; i++) if (rng() < 1 / n) { hit++; m2 += n * n; } return { n, p: hit / M, m2: m2 / M }; });
+  Plot.line($("cl2"), { series: [{ x: ns, y: rows.map((r) => r.p), points: true, connect: true, label: "P̂(|Xₙ| > ε)" }, { x: ns, y: ns.map((n) => 1 / n), dash: [4, 3], label: "1/n" }, { x: ns, y: rows.map((r) => r.m2), points: true, connect: true, label: "Ê[Xₙ²]", color: Plot.css("--c2") }, { x: ns, y: ns, dash: [4, 3], label: "n", color: Plot.css("--c2") }], xlog: true, ylog: true, xlabel: "n", title: "One quantity → 0, the other → ∞" });
+  $("l2tab").innerHTML = `<table><tr><th>n</th><th>P̂(Xₙ ≠ 0)</th><th>Ê[Xₙ²]</th></tr>${rows.filter((_, i) => i % 2 === 0).map((r) => `<tr><td>${r.n}</td><td>${r.p.toFixed(4)}</td><td>${r.m2.toFixed(1)}</td></tr>`).join("")}</table>`;
+}
+$("l2Go").onclick = demoL2;
+
+// D3: distribution vs probability
+function demoD() {
+  const rng = makeRng(8), X = Array.from({ length: 20000 }, () => rng.normal()), Xn = X.map((x) => -x), D = X.map((x) => Math.abs(x - -x));
+  Plot.hist($("cd1"), { sets: [{ data: X, label: "X" }, { data: Xn, label: "Xₙ = −X" }], bins: 50, density: true, xr: [-4, 4], title: "Same distribution: the histograms coincide" });
+  Plot.hist($("cd2"), { data: D, bins: 50, density: true, xr: [0, 8], label: "|Xₙ − X| = 2|X|", title: "…but the values never get close", color: Plot.css("--c4") });
+  const out = D.filter((d) => d > 0.5).length / D.length;
+  $("dTxt").textContent = `Simulated P(|Xₙ − X| > 0.5) = ${out.toFixed(3)} for every n (theory P(|X| > 0.25) = ${(2 * (1 - Normal.cdf(0.25))).toFixed(3)}).`;
+}
+
+// D4: LLN
+function demoLLN() {
+  const D = SAMP[$("llnD").value], eps = +$("llnE").value, rng = makeRng(21), N = 10000, M = 300, show = 30;
+  const ks = []; for (let k = 1; k <= N; k = Math.ceil(k * 1.08)) ks.push(k); if (ks[ks.length - 1] !== N) ks.push(N);
+  const out = new Array(ks.length).fill(0), paths = [];
+  for (let j = 0; j < M; j++) {
+    let s = 0, c = 0; const p = [];
+    for (let k = 1; k <= N; k++) { s += D.f(rng); if (k === ks[c]) { const m = s / k; if (Math.abs(m - D.mu) > eps) out[c]++; if (j < show) p.push(m); c++; } }
+    if (j < show) paths.push(p);
+  }
+  const series = paths.map((p) => ({ x: ks, y: p, width: 1, alpha: 0.6, color: Plot.css("--c2") }));
+  series.push({ x: ks, y: ks.map(() => D.mu + eps), color: Plot.css("--c1"), width: 2, label: "μ ± ε" }, { x: ks, y: ks.map(() => D.mu - eps), color: Plot.css("--c1"), width: 2 });
+  const isC = $("llnD").value === "cauchy";
+  Plot.line($("clln1"), { series, xlog: true, yr: isC ? [-6, 6] : [D.mu - 6 * eps, D.mu + 6 * eps], title: `${show} sample paths of X̄ₙ`, xlabel: "n" });
+  const sd = D.sd;
+  Plot.line($("clln2"), { series: [{ x: ks, y: out.map((o) => o / M), points: true, r: 2, connect: true, label: "share of paths outside μ ± ε" }, ...(isC ? [] : [{ x: ks, y: ks.map((k) => Math.min(1, (sd * sd) / (k * eps * eps))), dash: [5, 4], label: "Chebyshev σ²/(nε²)", color: Plot.css("--c4") }])], xlog: true, yr: [0, 1.05], xlabel: "n" });
+}
+$("llnGo").onclick = demoLLN; $("llnD").onchange = demoLLN;
+
+// D5: CLT
+const cltN = () => Math.max(1, Math.round(10 ** +$("cltN").value));
+function demoCLT() {
+  $("cltNv").textContent = cltN();
+  const key = $("cltD").value === "bern" ? "bern01" : $("cltD").value, D = SAMP[key], n = cltN(), rng = makeRng(31), R = 20000;
+  const z = new Array(R);
+  for (let r = 0; r < R; r++) { let s = 0; for (let i = 0; i < n; i++) s += D.f(rng); z[r] = (Math.sqrt(n) * (s / n - D.mu)) / D.sd; }
+  Plot.hist($("cclt"), { data: z, bins: 60, density: true, xr: [-4, 4], overlay: [{ fn: Normal.pdf, label: "N(0,1)" }], label: `Zₙ, n = ${n}`, title: "Standardised sample mean over 20 000 independent streams" });
+  const ns = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512], ks = ns.map((m) => {
+    const zz = []; for (let r = 0; r < 4000; r++) { let s = 0; for (let i = 0; i < m; i++) s += D.f(rng); zz.push((Math.sqrt(m) * (s / m - D.mu)) / D.sd); }
+    zz.sort((a, b) => a - b); let d = 0; for (let i = 0; i < zz.length; ) { let j = i; while (j < zz.length && zz[j] === zz[i]) j++; const F = Normal.cdf(zz[i]); d = Math.max(d, Math.abs(j / zz.length - F), Math.abs(i / zz.length - F)); i = j; } return d;
+  });
+  Plot.line($("cclt2"), { series: [{ x: ns, y: ks, points: true, connect: true, label: "KS distance to N(0,1)" }, { x: ns, y: ns.map((m) => ks[0] / Math.sqrt(m)), dash: [5, 4], label: "∝ 1/√n" }], xlog: true, ylog: true, xlabel: "n" });
+}
+$("cltGo").onclick = demoCLT; $("cltN").oninput = () => { $("cltNv").textContent = cltN(); }; $("cltN").onchange = demoCLT; $("cltD").onchange = demoCLT;
+
+// D6: sqrt(n)
+function demoSqrt() {
+  const rho = +$("rho").value, c = +$("cc").value; $("rhoV").textContent = rho.toFixed(2); $("cV").textContent = c.toFixed(2);
+  const rng = makeRng(41), M = 1500, N = 1000;
+  const cps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const acc = { iid: cps.map(() => []), ar: cps.map(() => []), eq: cps.map(() => []) };
+  for (let m = 0; m < M; m++) {
+    let si = 0, sa = 0, se = 0, a = rng.normal(), k = 0; const shock = rng.normal();
+    for (let n = 1; n <= N; n++) {
+      const e = rng.normal(); si += e;
+      a = n === 1 ? a : rho * a + Math.sqrt(1 - rho * rho) * e; sa += a;          // stationary AR(1), Var = 1
+      se += Math.sqrt(c) * shock + Math.sqrt(1 - c) * rng.normal();              // equicorrelated, Var = 1, Cov = c
+      if (n === cps[k]) { acc.iid[k].push(si); acc.ar[k].push(sa); acc.eq[k].push(se); k++; }
+    }
+  }
+  const sd = (a) => { const m = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
+  const arTheory = (n) => Math.sqrt(n * (1 + rho) / (1 - rho) - (2 * rho * (1 - rho ** n)) / (1 - rho) ** 2);
+  Plot.line($("csq"), { series: [
+    { x: cps, y: acc.iid.map(sd), points: true, label: "i.i.d.: sd(Sₙ)" }, { x: cps, y: cps.map(Math.sqrt), dash: [5, 4], label: "√n", color: Plot.css("--c1") },
+    { x: cps, y: acc.ar.map(sd), points: true, label: `AR(1) ρ=${rho}`, color: Plot.css("--c2") }, { x: cps, y: cps.map(arTheory), dash: [5, 4], color: Plot.css("--c2") },
+    { x: cps, y: acc.eq.map(sd), points: true, label: `common shock c=${c}`, color: Plot.css("--c4") }, { x: cps, y: cps.map((n) => Math.sqrt(n + n * (n - 1) * c)), dash: [5, 4], color: Plot.css("--c4") }],
+    xlog: true, ylog: true, xlabel: "n", ylabel: "standard deviation of Sₙ", title: "Points: simulation (1 500 replicates). Dashed: exact theory." });
+}
+$("sqGo").onclick = demoSqrt; $("rho").onchange = demoSqrt; $("cc").onchange = demoSqrt;
+
+// D7: base rates
+function demoBase() {
+  const pi = 10 ** +$("pi").value, se = +$("se").value, fp = 10 ** +$("fp").value;
+  $("piV").textContent = (100 * pi).toPrecision(2) + "%"; $("seV").textContent = (100 * se).toFixed(1) + "%"; $("fpV").textContent = (100 * fp).toPrecision(2) + "%";
+  const pAlert = se * pi + fp * (1 - pi), ppv = (se * pi) / pAlert, npv = ((1 - se) * pi) / (1 - pAlert);
+  $("ppv").textContent = (100 * ppv).toPrecision(3) + "%";
+  const N = 10000, TP = Math.round(N * pi * se), FN = Math.round(N * pi * (1 - se)), FP = Math.round(N * (1 - pi) * fp), TN = N - TP - FN - FP;
+  $("baseTxt").innerHTML = `Out of 10 000 events: <b>${TP + FN}</b> attacks, of which ${TP} raise an alert, and <b>${N - TP - FN}</b> benign events, of which ${FP} raise a false alarm. Of the ${TP + FP} alerts only ${TP} are real: P(attack | alert) = ${TP}/${TP + FP} ≈ ${(100 * ppv).toPrecision(3)}%. A silent event is an attack with probability ${(100 * npv).toExponential(1)}%.<br><b>Base-rate effect:</b> when attacks are rare, false positives from the huge benign majority dominate, even for an excellent detector.`;
+  // icon array: 1000 icons, each standing for 10 events
+  const cv = $("cicons"), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const cols = 50, rows = 20, s = Math.min(w / cols, h / rows);
+  const counts = [Math.round(TP / 10), Math.round(FN / 10), Math.round(FP / 10)], colors = [Plot.css("--c3"), Plot.css("--c4"), Plot.css("--c1")];
+  let idx = 0;
+  for (let r = 0; r < rows; r++) for (let c2 = 0; c2 < cols; c2++, idx++) {
+    let col = null, acc = 0; for (let t = 0; t < 3; t++) { acc += counts[t]; if (idx < acc && col === null) col = colors[t]; }
+    ctx.fillStyle = col || "#fff"; ctx.strokeStyle = col || "#cfc6b6"; ctx.lineWidth = 1;
+    ctx.fillRect(c2 * s + 1.5, r * s + 1.5, s - 3, s - 3); ctx.strokeRect(c2 * s + 1.5, r * s + 1.5, s - 3, s - 3);
+  }
+  // sequential evidence: k independent alerts from independent sensors
+  const LR = se / fp; let odds = pi / (1 - pi), rowsH = "";
+  for (let k = 0; k <= 4; k++) { rowsH += `<tr><td>${k}</td><td>${odds.toPrecision(3)}</td><td>${(100 * odds / (1 + odds)).toPrecision(3)}%</td></tr>`; odds *= LR; }
+  $("seqtab").innerHTML = `<p class="small">k independent sensors all alerting (likelihood ratio LR = ${LR.toPrecision(3)} each): posterior odds = prior odds × LR<sup>k</sup></p><table><tr><th>alerts k</th><th>odds</th><th>P(attack | k alerts)</th></tr>${rowsH}</table>`;
+}
+["pi", "se", "fp"].forEach((id) => $(id).addEventListener("input", demoBase));
+
+// D8: Beta-Binomial
+function betaGrid(a, b, G = 1000) {
+  const th = [], d = []; let s = 0;
+  for (let i = 0; i < G; i++) { const t = (i + 0.5) / G; th.push(t); const v = Math.exp((a - 1) * Math.log(t) + (b - 1) * Math.log(1 - t)); d.push(v); s += v; }
+  return { th, d: d.map((v) => (v * G) / s) };
+}
+function quant(g, q) { let acc = 0; const G = g.d.length; for (let i = 0; i < G; i++) { acc += g.d[i] / G; if (acc >= q) return g.th[i]; } return 1; }
+function demoBeta() {
+  const a = Math.max(0.1, +$("ba").value), b = Math.max(0.1, +$("bb").value), n = Math.max(0, +$("bn").value | 0), k = Math.min(n, Math.max(0, +$("bk").value | 0));
+  const prior = betaGrid(a, b), like = betaGrid(k + 1, n - k + 1), post = betaGrid(a + k, b + n - k);
+  Plot.line($("cbeta"), { series: [{ x: prior.th, y: prior.d, label: `prior Beta(${a}, ${b})`, dash: [5, 4] }, { x: like.th, y: like.d, label: `likelihood of k=${k}/n=${n} (normalised)`, color: Plot.css("--c2"), width: 1.5 }, { x: post.th, y: post.d, label: `posterior Beta(${a + k}, ${b + n - k})`, color: Plot.css("--c3"), width: 2.5 }], xr: [0, 1], xlabel: "θ = click probability", ylabel: "density" });
+  const pm = (a + k) / (a + b + n), lo = quant(post, 0.025), hi = quant(post, 0.975), w = n / (a + b + n);
+  const ph = n ? k / n : NaN, wl = n ? 1.96 * Math.sqrt((ph * (1 - ph)) / n) : NaN;
+  let tail = 0; post.th.forEach((t, i) => { if (t > 0.3) tail += post.d[i] / post.d.length; });
+  $("betaTxt").innerHTML = `Posterior mean <b>${pm.toFixed(3)}</b> = ${w.toFixed(2)} × (k/n = ${n ? ph.toFixed(3) : "—"}) + ${(1 - w).toFixed(2)} × (prior mean ${(a / (a + b)).toFixed(3)}).<br>95% credible interval <b>[${lo.toFixed(3)}, ${hi.toFixed(3)}]</b>, i.e. P(θ in this interval | data) = 0.95.<br>Frequentist 95% Wald interval: ${n ? `[${(ph - wl).toFixed(3)}, ${(ph + wl).toFixed(3)}]` : "—"} (a statement about the procedure, not about θ).<br>P(θ &gt; 0.30 | data) = <b>${tail.toFixed(3)}</b>, directly usable to decide whether more training is needed.`;
+}
+["ba", "bb", "bk", "bn"].forEach((id) => $(id).addEventListener("input", demoBeta));
+$("bWeak").onclick = () => { $("ba").value = 1; $("bb").value = 1; demoBeta(); };
+$("bStrong").onclick = () => { $("ba").value = 10; $("bb").value = 90; demoBeta(); };
+let streamT = null;
+$("bStream").onclick = () => {
+  clearInterval(streamT); const rng = makeRng(77); let n = 0, k = 0; $("bn").value = 0; $("bk").value = 0;
+  streamT = setInterval(() => { for (let i = 0; i < 5; i++) { n++; if (rng() < 0.25) k++; } $("bn").value = n; $("bk").value = k; demoBeta(); if (n >= 600) clearInterval(streamT); }, 120);
+};
+show(cur);
+</script>
+</body>
+</html>

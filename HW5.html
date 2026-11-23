@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW5 · Riemann vs Lebesgue, and the normal CDF</title>
+<style>
+:root{
+  --bg:#f7f5fc; --ink:#221d33; --muted:#6c6684; --v:#6d3fd1; --v2:#ece5fb; --pink:#d63384; --line:#e2dcf0; --card:#fff;
+  --plot-fg:#3a3450; --plot-grid:rgba(90,70,140,.12); --plot-bg:#fff;
+  --c1:#6d3fd1; --c2:#d63384; --c3:#13a3a3; --c4:#f08c00; --c5:#2b8a3e; --c6:#495057;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Segoe UI",system-ui,sans-serif}
+.hero{background:linear-gradient(120deg,#3b1f8a,#6d3fd1 55%,#d63384);color:#fff;padding:40px 0 30px}
+.w{max-width:1160px;margin:auto;padding:0 24px}
+.hero h1{margin:0;font-size:30px;font-weight:700}
+.hero p{margin:8px 0 0;opacity:.88;max-width:780px}
+.band{margin:34px 0 14px;display:flex;align-items:baseline;gap:12px}
+.band .ex{background:var(--v);color:#fff;font-weight:800;border-radius:8px;padding:3px 12px;font-size:13px}
+.band h2{margin:0;font-size:22px}
+.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:10px 0 16px}
+.fn{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:9px 11px;cursor:pointer;font-size:13px;transition:.15s}
+.fn b{display:block;font-family:Cambria,serif;font-size:15px}
+.fn span{color:var(--muted);font-size:12px}
+.fn.on{border-color:var(--v);background:var(--v2)}
+.fn.path{border-style:dashed}
+.split{display:grid;grid-template-columns:330px 1fr;gap:18px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.panel h3{margin:0 0 8px;font-size:15px;color:var(--v)}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 3px}
+label output{float:right;color:var(--ink);font-weight:700}
+input[type=range]{width:100%}
+select,input[type=number],input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:14px system-ui;background:#fff}
+.res{font:13px ui-monospace,Consolas,monospace;background:#faf8ff;border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:12px;white-space:pre-wrap}
+canvas{width:100%;height:300px;display:block}
+.twin{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+table{border-collapse:collapse;width:100%;font-size:13px;background:#fff}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+th{background:var(--v2);color:var(--v);text-align:right}
+th:first-child,td:first-child{text-align:left}
+.prose{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 22px;margin:14px 0}
+.prose h3{color:var(--v);margin:14px 0 4px;font-size:16px}
+.eq{font-family:Cambria,"Times New Roman",serif;font-size:16.5px;background:#faf8ff;border-radius:8px;padding:6px 14px;margin:6px 0;overflow-x:auto}
+button{background:var(--v);color:#fff;border:none;border-radius:9px;padding:8px 15px;font-weight:700;cursor:pointer;margin-top:10px}
+.err-good{color:#2b8a3e;font-weight:700} .err-bad{color:var(--pink);font-weight:700}
+@media(max-width:900px){.split,.twin{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="hero"><div class="w">
+  <h1>Homework 5 — Two ways to measure an area, and a curve with no formula</h1>
+  <p>Exercise 1 compares Riemann sums (slice the <i>domain</i>) with Lebesgue sums (slice the <i>range</i> and measure preimages) on nine functions, including two pathological ones. Exercise 2 builds an accurate and fast standard normal CDF and explains why it needs special functions.</p>
+  <p style="font-size:13px">Student: <span contenteditable="true">your name</span> · ID <span contenteditable="true">0000000</span></p>
+</div></div>
+<div class="w">
+
+<div class="band"><span class="ex">EX 1</span><h2>Riemann and Lebesgue integration</h2></div>
+<div class="picker" id="picker"></div>
+<div class="split">
+  <div class="panel">
+    <h3>Approximation settings</h3>
+    <label>Riemann subintervals N <output id="Nv"></output></label><input type="range" id="N" min="1" max="4" step="0.05" value="1.1">
+    <label>Riemann tag point</label><select id="tag"><option value="mid">midpoint</option><option value="left">left endpoint</option><option value="right">right endpoint</option><option value="rand">random in each cell</option><option value="irr">"irrational" tag (mid + √2/(10N))</option></select>
+    <label>Lebesgue levels K <output id="Kv"></output></label><input type="range" id="K" min="1" max="4" step="0.05" value="1.1">
+    <label>Lebesgue preimage measure</label><select id="meas"><option value="exact">exact (analytic preimages)</option><option value="grid">estimated on a fine grid of M points</option></select>
+    <label>M grid points (estimated measure) <output id="Mv"></output></label><input type="range" id="M" min="2" max="6" step="0.1" value="4">
+    <div class="res" id="res1"></div>
+  </div>
+  <div class="panel">
+    <div class="twin"><canvas id="criem"></canvas><canvas id="cleb"></canvas></div>
+    <canvas id="cconv" style="height:320px"></canvas>
+  </div>
+</div>
+<div class="panel" style="margin-top:16px"><h3>All functions at N = K = 1000</h3><div id="alltab" style="overflow-x:auto"></div></div>
+<div class="prose">
+  <h3>The two definitions, numerically</h3>
+  <div class="eq">Riemann: &nbsp; ∫<sub>a</sub><sup>b</sup> f ≈ Σ<sub>i=1</sub><sup>N</sup> f(ξ<sub>i</sub>)·Δx, &nbsp; ξ<sub>i</sub> ∈ [x<sub>i−1</sub>, x<sub>i</sub>]</div>
+  <div class="eq">Lebesgue (layer-cake form): &nbsp; ∫ f dμ = ∫<sub>0</sub><sup>∞</sup> μ{x : f(x) &gt; y} dy ≈ Σ<sub>j=1</sub><sup>K</sup> Δy · μ{f &gt; y<sub>j</sub>}, &nbsp; y<sub>j</sub> = jΔy</div>
+  <p>The Lebesgue sum groups points by <i>value</i>: Σ<sub>j</sub> y<sub>j</sub>·μ(E<sub>j</sub>) with E<sub>j</sub> = {y<sub>j</sub> ≤ f &lt; y<sub>j+1</sub>}. Summing by parts gives the layer-cake sum above, the lower Lebesgue sum. It always needs the <b>measure of a preimage</b>. For monotone or piecewise-monotone f the preimage is an interval, and we compute it exactly (for sin x / x by bisection). In general it has to be estimated, and the "fine grid" option does that by counting grid points. That hidden cost is a Riemann sum in disguise.</p>
+  <h3>What the experiments show</h3>
+  <p><b>Accuracy and convergence.</b> For continuous, piecewise-smooth functions both methods converge to the same value, as the theory says: Riemann-integrable ⇒ Lebesgue-integrable with the same integral. The midpoint Riemann rule has error O(N⁻²) for smooth f (slope −2 in the log–log chart), and the left/right rules have O(N⁻¹). The lower Lebesgue sum with exact preimages has error O(K⁻¹) (it is a left rule in y), and it is insensitive to how wild f is in x. A jump costs Riemann O(N⁻¹) unless a grid point falls on it, while for Lebesgue a jump is just a flat stretch of μ{f &gt; y}. For 1/√x Riemann sees an unbounded integrand: left endpoints fail, and midpoints converge only like N<sup>−1/2</sup>. Lebesgue integrates μ{f &gt; y} = min(1, y<sup>−2</sup>), which is bounded. With geometrically spaced levels up to y = K, the truncation (1/K) and discretisation (≈ 2 ln K / K) errors are both small, and the unboundedness costs nothing special.</p>
+  <p><b>Efficiency.</b> Riemann needs N evaluations of f and nothing else. Lebesgue needs K preimage measurements. They are cheap when the inverse is known in closed form, but the estimated version needs M ≫ K evaluations of f to be accurate, so in practice it is slower (see "evals" in the table). This is why numerical libraries are Riemann-like (quadrature rules), while Lebesgue's idea matters for <i>theory</i>: limits, probability and expectations of random variables.</p>
+  <h3>Functions where they behave differently</h3>
+  <p><b>Dirichlet</b> (1 on ℚ, 0 elsewhere). Every subinterval contains rationals and irrationals, so the upper Riemann sums are all 1 and the lower ones 0. The Riemann sum depends on the tags: 1 for rational midpoints, 0 for "irrational" tags. The function is <i>not Riemann integrable</i>. Lebesgue: ℚ ∩ [0,1] is countable and has measure 0, so μ{f &gt; y} = 0 for y ≥ 0 and the integral is 0. (A computer cannot sample irrationals, because every float is rational. The tags are therefore handled symbolically.)</p>
+  <p><b>Thomae</b> (1/q at p/q in lowest terms, 0 on irrationals). It is discontinuous on every rational but continuous on the irrationals, so the discontinuities have measure zero and the function <i>is</i> Riemann integrable, with integral 0. Rational midpoint sums converge to 0 only slowly, as the chart shows. Lebesgue gets 0 at once, since {f &gt; y} is finite for every y &gt; 0.</p>
+</div>
+
+<div class="band"><span class="ex">EX 2</span><h2>Numerical computation of the standard normal CDF</h2></div>
+<div class="split">
+  <div class="panel">
+    <h3>Evaluate Φ(x)</h3>
+    <label>x <input type="number" id="x" value="1.96" step="0.1"></label>
+    <label>Simpson panels N <output id="SNv"></output></label><input type="range" id="SN" min="1" max="4" step="0.1" value="2">
+    <div class="res" id="res2"></div>
+    <button id="bench">Benchmark 200 000 evaluations</button>
+    <div class="res" id="benchres">click to measure speed</div>
+  </div>
+  <div class="panel">
+    <canvas id="cerr" style="height:330px"></canvas>
+    <canvas id="cterms" style="height:250px"></canvas>
+  </div>
+</div>
+<div class="panel" style="margin-top:16px"><h3>Comparison with trusted reference values</h3>
+  <p style="font-size:13px;color:var(--muted);margin:0 0 8px">Reference: 15-significant-digit values of Φ(x) as tabulated by standard references (NIST DLMF erf/erfc definitions; values agree with Wolfram|Alpha <code>CDF[NormalDistribution[], x]</code>).</p>
+  <div id="reftab" style="overflow-x:auto"></div></div>
+<div class="prose">
+  <h3>Why Φ has no elementary formula (Liouville)</h3>
+  <div class="eq">Φ(x) = ∫<sub>−∞</sub><sup>x</sup> φ(t) dt, &nbsp; φ(t) = e<sup>−t²/2</sup>/√(2π)</div>
+  <p><b>Liouville's theorem</b> (1835, later made algorithmic by Risch): for rational functions f, g with g non-constant, an antiderivative of f·e<sup>g</sup> is elementary if and only if there is a <i>rational</i> function R with R′ + g′R = f, and then ∫f e<sup>g</sup> = R e<sup>g</sup>. For φ take f = 1 and g = −t²/2, so we need R′ − tR = 1. If R were a polynomial of degree d, then tR would have degree d+1 and nothing could cancel its leading term. If R had a pole of order m at some c, then R′ would have a pole of order m+1 that tR cannot cancel. So no rational R exists, and e<sup>−t²/2</sup> has no elementary antiderivative. No finite combination of polynomials, exp, log, roots and trigonometric functions equals Φ.</p>
+  <h3>The error function: exact, but still numerical</h3>
+  <div class="eq">erf(z) = (2/√π) ∫<sub>0</sub><sup>z</sup> e<sup>−t²</sup> dt, &nbsp;&nbsp; Φ(x) = ½ [1 + erf(x/√2)] = ½ erfc(−x/√2)</div>
+  <p>Defining a new <i>special function</i> gives an exact closed form for Φ, much as "log" names the antiderivative of 1/x. But erf is itself defined by the integral. Evaluating it still means summing a series, a continued fraction or a fitted rational approximation, so numerical methods remain necessary. The special function packages the computation, it does not remove it.</p>
+  <h3>The methods implemented here</h3>
+  <p><b>Alternating Taylor series</b> of erf: exact in principle, but for |x| ≳ 5 the terms grow to about e<sup>x²/2</sup> before shrinking, and cancellation destroys the digits. <b>Positive (Kummer) series</b> erf(z) = (2/√π)e<sup>−z²</sup>Σ 2<sup>k</sup>z<sup>2k+1</sup>/(2k+1)!!: no cancellation, but it needs about z² + 30 terms. <b>Simpson's rule</b> on φ from 0 to x: error O(N⁻⁴), and it costs N evaluations of exp. <b>Laplace continued fraction</b> for the upper tail 1 − Φ(x) = φ(x)/(x + 1/(x + 2/(x + 3/(x + …)))): converges fast for large x and computes tiny tails <i>directly</i>, avoiding the catastrophic 1 − Φ cancellation. <b>Hybrid (my method)</b>: Kummer series for |x| &lt; 3, continued fraction for |x| ≥ 3, symmetry Φ(−x) = 1 − Φ(x) applied to the <i>small</i> side. It reaches full double precision (relative error ≈ 10⁻¹⁵ even at x = −8) in about 30–60 operations. <b>Abramowitz–Stegun 7.1.26</b>: a 5-term rational-exponential fit with absolute error below 1.5·10⁻⁷. It is very fast and good enough for most statistics, but useless for extreme tails.</p>
+</div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+// ======================== EXERCISE 1 ========================
+const gcd = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
+// mu(y) = measure{x : f(x) > y} (exact), plus sup for level range
+const FUNCS = [
+  { id: "sin", tex: "sin x", dom: [0, Math.PI], span: "[0, π]", exact: 2, f: Math.sin, sup: 1, mu: (y) => (y < 0 ? Math.PI : y >= 1 ? 0 : Math.PI - 2 * Math.asin(y)) },
+  { id: "sq", tex: "x²", dom: [0, 1], span: "[0, 1]", exact: 1 / 3, f: (x) => x * x, sup: 1, mu: (y) => (y < 0 ? 1 : y >= 1 ? 0 : 1 - Math.sqrt(y)) },
+  { id: "step13", tex: "1 if x<½, 3 if x≥½", dom: [0, 1], span: "[0, 1]", exact: 2, f: (x) => (x < 0.5 ? 1 : 3), sup: 3, mu: (y) => (y < 1 ? 1 : y < 3 ? 0.5 : 0) },
+  { id: "abs", tex: "|x − ½|", dom: [0, 1], span: "[0, 1]", exact: 0.25, f: (x) => Math.abs(x - 0.5), sup: 0.5, mu: (y) => (y < 0 ? 1 : y >= 0.5 ? 0 : 1 - 2 * y) },
+  { id: "isqrt", tex: "1/√x", dom: [0, 1], span: "(0, 1], unbounded", exact: 2, f: (x) => 1 / Math.sqrt(x), sup: Infinity, mu: (y) => (y <= 1 ? 1 : 1 / (y * y)) },
+  { id: "step10", tex: "1 if x<½, 0 if x≥½", dom: [0, 1], span: "[0, 1]", exact: 0.5, f: (x) => (x < 0.5 ? 1 : 0), sup: 1, mu: (y) => (y < 0 ? 1 : y < 1 ? 0.5 : 0) },
+  { id: "sinc", tex: "sin x / x", dom: [0, Math.PI], span: "[0, π]", exact: 1.8519370519824665, f: (x) => (x === 0 ? 1 : Math.sin(x) / x), sup: 1,
+    mu: (y) => { if (y < 0) return Math.PI; if (y >= 1) return 0; let lo = 0, hi = Math.PI; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; ((m === 0 ? 1 : Math.sin(m) / m) > y ? (lo = m) : (hi = m)); } return lo; } },
+  { id: "gauss", tex: "e^(−x²)", dom: [0, 2], span: "[0, 2]", exact: 0.8820813907624215, f: (x) => Math.exp(-x * x), sup: 1, mu: (y) => (y <= Math.exp(-4) ? 2 : y >= 1 ? 0 : Math.sqrt(-Math.log(y))) },
+  { id: "dirichlet", tex: "Dirichlet 𝟙ℚ", dom: [0, 1], span: "pathological", exact: 0, path: true, sup: 1, mu: () => 0 },
+  { id: "thomae", tex: "Thomae 1/q", dom: [0, 1], span: "pathological", exact: 0, path: true, sup: 0.5, mu: () => 0 },
+];
+let FN = FUNCS[0];
+$("picker").innerHTML = FUNCS.map((F, i) => `<div class="fn ${F.path ? "path" : ""}" data-i="${i}"><b>${F.tex}</b><span>${F.span} · ∫ = ${F.id === "dirichlet" ? "0 (Lebesgue)" : +F.exact.toFixed(6)}</span></div>`).join("");
+document.querySelectorAll(".fn").forEach((el) => (el.onclick = () => { FN = FUNCS[+el.dataset.i]; document.querySelectorAll(".fn").forEach((x) => x.classList.toggle("on", x === el)); ex1(); }));
+document.querySelector(".fn").classList.add("on");
+const iv = (id) => Math.round(10 ** +$(id).value);
+
+// Riemann sum; pathological functions handled with exact rational tags
+function riemann(F, N, tag, rng) {
+  const [a, b] = F.dom, h = (b - a) / N;
+  if (F.path) {
+    // tags: midpoints (2i+1)/(2N) are rational; "irr" tags are irrational
+    if (tag === "irr") return { v: 0, evals: N };
+    let s = 0;
+    for (let i = 0; i < N; i++) {
+      let p, q;
+      if (tag === "left") { p = i; q = N; } else if (tag === "right") { p = i + 1; q = N; } else { p = 2 * i + 1; q = 2 * N; }
+      const g = gcd(p, q); q /= g;
+      s += F.id === "dirichlet" ? 1 : p === 0 ? 1 : 1 / q;  // Thomae(0) = 1 by convention (0/1)
+    }
+    return { v: s * h, evals: N };
+  }
+  let s = 0;
+  for (let i = 0; i < N; i++) {
+    const x = tag === "left" ? a + i * h : tag === "right" ? a + (i + 1) * h : tag === "rand" ? a + (i + rng()) * h : tag === "irr" ? a + (i + 0.5) * h + (Math.SQRT2 / 10) * h : a + (i + 0.5) * h;
+    s += F.f(x);
+  }
+  return { v: s * h, evals: N };
+}
+// lower Lebesgue (layer-cake) sum: Σ (y_j − y_{j−1}) · μ{f > y_j}
+function lebesgue(F, K, meas, M) {
+  let ys = [0], ymax;
+  if (Number.isFinite(F.sup)) { ymax = F.sup; for (let j = 1; j <= K; j++) ys.push((j * ymax) / K); }
+  else { // unbounded: K/2 uniform levels on [0,1], then geometric levels from 1 up to y = K
+    const h = Math.max(1, Math.floor(K / 2)), g = Math.max(1, K - h), r = Math.pow(K, 1 / g);
+    for (let j = 1; j <= h; j++) ys.push(j / h);
+    for (let j = 1; j <= g; j++) ys.push(Math.pow(r, j));
+    ymax = K;
+  }
+  let muF = F.mu, evals = 0;
+  if (meas === "grid" && !F.path) {
+    const [a, b] = F.dom, h = (b - a) / M, vals = new Float64Array(M);
+    for (let i = 0; i < M; i++) vals[i] = F.f(a + (i + 0.5) * h);
+    vals.sort(); evals = M;
+    muF = (y) => { // count grid points with f > y by binary search
+      let lo = 0, hi = M; while (lo < hi) { const m = (lo + hi) >> 1; if (vals[m] > y) hi = m; else lo = m + 1; } return (M - lo) * h;
+    };
+  }
+  let s = 0;
+  for (let j = 1; j < ys.length; j++) s += (ys[j] - ys[j - 1]) * muF(ys[j]);
+  return { v: s, evals: evals || K, ymax };
+}
+function drawPictures(F) {
+  const N = Math.min(iv("N"), 40), K = Math.min(iv("K"), 40);
+  const [a, b] = F.dom, xs = Array.from({ length: 400 }, (_, i) => a + ((b - a) * (i + 0.5)) / 400);
+  const ytop = Number.isFinite(F.sup) ? F.sup * 1.1 : 6;
+  const curve = F.path ? [] : [{ x: xs, y: xs.map(F.f), label: F.tex, width: 2 }];
+  // Riemann rectangles drawn as step series
+  const rx = [], ry = [], h = (b - a) / N, tag = $("tag").value;
+  for (let i = 0; i < N; i++) {
+    let v;
+    if (F.path) v = tag === "irr" ? 0 : F.id === "dirichlet" ? 1 : (() => { const p = 2 * i + 1, q = 2 * N, g = gcd(p, q); return 1 / (q / g); })();
+    else { const x = tag === "left" ? a + i * h : tag === "right" ? a + (i + 1) * h : a + (i + 0.5) * h; v = F.f(x); }
+    rx.push(a + i * h, a + i * h, a + (i + 1) * h, a + (i + 1) * h); ry.push(0, Math.min(v, ytop), Math.min(v, ytop), 0);
+  }
+  Plot.line($("criem"), { series: [...curve, { x: rx, y: ry, label: `Riemann: ${N} vertical strips`, color: Plot.css("--c2") }], yr: [0, ytop], xr: [a, b], title: "slice the domain" });
+  // Lebesgue slabs: for each level band, the set {f > y_j} drawn as horizontal segments
+  const lb = [], ymax = Number.isFinite(F.sup) ? F.sup : Math.min(ytop, K), dy = ymax / K;
+  if (!F.path) for (let j = 1; j <= K; j++) {
+    const y = j * dy; let inside = false, x0 = 0;
+    for (let i = 0; i <= 400; i++) {
+      const x = a + ((b - a) * i) / 400, on = i < 400 && F.f(Math.max(x, 1e-9)) > y;
+      if (on && !inside) { inside = true; x0 = x; }
+      if (!on && inside) { inside = false; lb.push({ x: [x0, x, x, x0, x0], y: [y - dy, y - dy, y, y, y - dy], color: Plot.css("--c3"), width: 1.2, alpha: 0.9 }); }
+    }
+  }
+  Plot.line($("cleb"), { series: [...curve, ...lb, { x: [a], y: [0], label: `Lebesgue: ${K} horizontal slabs μ{f > yⱼ}·Δy`, color: Plot.css("--c3") }], yr: [0, ytop], xr: [a, b], title: "slice the range", legend: true });
+}
+function ex1() {
+  $("Nv").textContent = iv("N"); $("Kv").textContent = iv("K"); $("Mv").textContent = iv("M");
+  const F = FN, N = iv("N"), K = iv("K"), M = iv("M"), rng = makeRng(3);
+  const t0 = performance.now(); const R = riemann(F, N, $("tag").value, rng); const t1 = performance.now();
+  const L = lebesgue(F, K, $("meas").value, M); const t2 = performance.now();
+  const err = (v) => (F.id === "dirichlet" && v === 1 ? "—" : Math.abs(v - F.exact).toExponential(2));
+  $("res1").textContent = `f = ${F.tex} on ${F.span}\nexact integral  ${F.id === "dirichlet" ? "Riemann: does not exist · Lebesgue: 0" : F.exact}\n\nRiemann  (${$("tag").value}, N=${N})\n  value ${R.v.toPrecision(10)}  error ${err(R.v)}\n  ${R.evals} evaluations, ${(t1 - t0).toFixed(2)} ms\nLebesgue (${$("meas").value}, K=${K}${$("meas").value === "grid" ? ", M=" + M : ""})\n  value ${L.v.toPrecision(10)}  error ${err(L.v)}\n  ${L.evals} ${$("meas").value === "grid" ? "evaluations of f" : "preimage measures"}, ${(t2 - t1).toFixed(2)} ms${Number.isFinite(F.sup) ? "" : `\n  (levels: uniform on [0,1], geometric up to y = ${L.ymax}; neglected tail ∫ μ = 1/${L.ymax})`}`;
+  drawPictures(F);
+  // convergence chart
+  const Ns = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384];
+  const e = (v) => Math.max(Math.abs(v - F.exact), 1e-16);
+  const series = [
+    { x: Ns, y: Ns.map((n) => e(riemann(F, n, "mid", rng).v)), label: "Riemann midpoint", points: true, connect: true },
+    { x: Ns, y: Ns.map((n) => e(riemann(F, n, F.id === "isqrt" ? "right" : "left", rng).v)), label: F.id === "isqrt" ? "Riemann right" : "Riemann left", points: true, connect: true },
+    { x: Ns, y: Ns.map((n) => e(lebesgue(F, n, "exact").v)), label: "Lebesgue exact μ", points: true, connect: true },
+    { x: Ns, y: Ns.map((n) => e(lebesgue(F, n, "grid", 10 * n).v)), label: "Lebesgue μ on grid M=10K", points: true, connect: true, dash: [4, 3] },
+  ];
+  if (F.path) series.push({ x: Ns, y: Ns.map((n) => e(riemann(F, n, "irr").v)), label: "Riemann irrational tags", points: true, connect: true });
+  Plot.line($("cconv"), { series, xlog: true, ylog: true, yr: [1e-16, 10], title: `Absolute error vs number of cells (N or K) · ${F.tex}`, xlabel: "N = K" });
+}
+["N", "K", "M", "tag", "meas"].forEach((id) => $(id).addEventListener("input", ex1));
+function allTable() {
+  const N = 1000, rng = makeRng(1);
+  const rows = FUNCS.map((F) => {
+    const t0 = performance.now(), Rm = riemann(F, N, "mid", rng).v, t1 = performance.now(), Rl = riemann(F, N, F.id === "isqrt" ? "right" : "left", rng).v;
+    const t2 = performance.now(), Le = lebesgue(F, N, "exact").v, t3 = performance.now(), Lg = lebesgue(F, N, "grid", 100000).v, t4 = performance.now();
+    const ex = F.id === "dirichlet" ? "R: none · L: 0" : F.exact.toPrecision(8);
+    const e = (v) => (F.id === "dirichlet" ? v.toFixed(3) : Math.abs(v - F.exact).toExponential(1));
+    return `<tr><td>${F.tex}</td><td>${ex}</td><td>${Rm.toPrecision(8)}</td><td>${e(Rm)}</td><td>${e(Rl)}</td><td>${Le.toPrecision(8)}</td><td>${e(Le)}</td><td>${F.path ? "n/a" : e(Lg)}</td><td>${(t1 - t0).toFixed(2)} / ${(t3 - t2).toFixed(2)} / ${(t4 - t3).toFixed(1)}</td></tr>`;
+  });
+  $("alltab").innerHTML = `<table><tr><th>f</th><th>exact</th><th>Riemann mid</th><th>err mid</th><th>err left/right</th><th>Lebesgue exact μ</th><th>err</th><th>err Lebesgue (grid M=10⁵)</th><th>ms: Riemann / Leb. exact / Leb. grid</th></tr>${rows.join("")}</table>
+  <p style="font-size:13px;color:var(--muted)">For Dirichlet the "err" columns show the Riemann <i>value</i> itself: 1 with rational tags, 0 with irrational tags. No common limit exists.</p>`;
+}
+
+// ======================== EXERCISE 2 ========================
+const SQRT2PI = Math.sqrt(2 * Math.PI), phi = (x) => Math.exp(-0.5 * x * x) / SQRT2PI;
+const Meth = {
+  taylor(x) { // alternating series of erf(z), z = x/√2
+    const z = x / Math.SQRT2; let term = z, sum = z, k = 0;
+    while (Math.abs(term) > 1e-17 * Math.abs(sum) && k < 500) { k++; term *= -z * z / k; sum += term / (2 * k + 1); }
+    return { v: 0.5 * (1 + (2 / Math.sqrt(Math.PI)) * sum), terms: k + 1 };
+  },
+  kummer(x) { // positive series, Φ(x) = 1/2 + φ(x)·Σ x^(2k+1)/(1·3·…·(2k+1))
+    let term = x, sum = x, k = 0;
+    while (Math.abs(term) > 1e-17 * Math.abs(sum) && k < 2000) { k++; term *= (x * x) / (2 * k + 1); sum += term; }
+    return { v: 0.5 + phi(x) * sum, terms: k + 1 };
+  },
+  simpson(x, N = 100) {
+    if (N % 2) N++;
+    const h = x / N; let s = phi(0) + phi(x);
+    for (let i = 1; i < N; i++) s += (i % 2 ? 4 : 2) * phi(i * h);
+    return { v: 0.5 + (s * h) / 3, terms: N + 1 };
+  },
+  // upper tail Q(x) = 1 − Φ(x) for x > 0 by the Laplace continued fraction (backward evaluation)
+  cfTail(x) {
+    let n = x < 3 ? 120 : x < 5 ? 60 : 30, t = x;
+    for (let k = n; k >= 1; k--) t = x + k / t;
+    return { v: phi(x) / t, terms: n };
+  },
+  hybrid(x) {
+    const a = Math.abs(x);
+    if (a < 3) return Meth.kummer(x);
+    const q = Meth.cfTail(a); // small side computed directly
+    return { v: x > 0 ? 1 - q.v : q.v, terms: q.terms };
+  },
+  as26(x) { // Abramowitz–Stegun 7.1.26 for erf
+    const z = Math.abs(x) / Math.SQRT2, t = 1 / (1 + 0.3275911 * z);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z);
+    return { v: x >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y), terms: 6 };
+  },
+};
+const NAMES = { taylor: "alternating Taylor (erf)", kummer: "positive Kummer series", simpson: "Simpson on φ", hybrid: "hybrid: series + continued fraction", as26: "Abramowitz–Stegun 7.1.26" };
+const REF = [[-8, "6.22096057427178e-16"], [-5, "2.86651571879194e-7"], [-3, "1.34989803163010e-3"], [-1, "0.158655253931457"], [0, "0.5"], [0.5, "0.691462461274013"], [1, "0.841344746068543"], [1.5, "0.933192798731142"], [1.96, "0.975002104851780"], [2, "0.977249868051821"], [2.5, "0.993790334674224"], [3, "0.998650101968370"], [4, "0.999968328758167"], [5, "0.999999713348428"], [6, "0.999999999013412"]];
+const SN = () => Math.round(10 ** +$("SN").value);
+function ex2() {
+  $("SNv").textContent = SN();
+  const x = +$("x").value;
+  const lines = Object.keys(NAMES).map((k) => { const r = k === "simpson" ? Meth.simpson(x, SN()) : Meth[k](x); return `${NAMES[k].padEnd(36)} ${r.v.toPrecision(16)}  (${r.terms} terms)`; });
+  $("res2").textContent = `Φ(${x})\n` + lines.join("\n") + `\nindependent check (Hart/West)         ${Normal.cdf(x).toPrecision(16)}`;
+  // error curves over x against the independent Hart/West implementation
+  const xs = []; for (let v = -8; v <= 8.0001; v += 0.1) xs.push(+v.toFixed(2));
+  const rel = (k) => xs.map((v) => { const ref = Normal.cdf(v), r = k === "simpson" ? Meth.simpson(v, SN()).v : Meth[k](v).v; return Math.max(Math.abs(r - ref) / ref, 1e-17); });
+  Plot.line($("cerr"), { series: Object.keys(NAMES).map((k) => ({ x: xs, y: rel(k), label: NAMES[k] })), ylog: true, yr: [1e-17, 10], title: "Relative error |Φ̂(x) − Φ(x)| / Φ(x) (reference: independent Hart–West algorithm)", xlabel: "x" });
+  const xs2 = xs.filter((v) => v >= 0);
+  Plot.line($("cterms"), { series: [{ x: xs2, y: xs2.map((v) => Meth.taylor(v).terms), label: "Taylor terms" }, { x: xs2, y: xs2.map((v) => Meth.kummer(v).terms), label: "Kummer terms" }, { x: xs2, y: xs2.map((v) => Meth.hybrid(v).terms), label: "hybrid terms" }], title: "Work needed (terms) vs x", xlabel: "x" });
+  $("reftab").innerHTML = `<table><tr><th>x</th><th>reference Φ(x)</th>${Object.keys(NAMES).map((k) => `<th>${NAMES[k]}</th>`).join("")}</tr>` + REF.map(([x, s]) => {
+    const ref = +s;
+    return `<tr><td>${x}</td><td>${s}</td>${Object.keys(NAMES).map((k) => { const v = (k === "simpson" ? Meth.simpson(x, SN()) : Meth[k](x)).v; const re = Math.abs(v - ref) / ref; return `<td class="${re < 1e-12 ? "err-good" : re > 1e-6 ? "err-bad" : ""}">${re === 0 ? "0" : re.toExponential(1)}</td>`; }).join("")}</tr>`;
+  }).join("") + `</table><p style="font-size:13px;color:var(--muted)">Cells show the relative error |Φ̂ − Φ|/Φ (the reference has 15 significant digits, so ≈10⁻¹⁵ is the floor). Green: below 10⁻¹². Pink: above 10⁻⁶. In the left tail Φ is tiny: methods that compute ½ + (something) (Taylor, Kummer, Simpson, A&amp;S) lose all relative accuracy there by cancellation, while the hybrid computes the tail directly.</p>`;
+}
+$("x").addEventListener("input", ex2); $("SN").addEventListener("input", ex2);
+$("bench").onclick = () => {
+  const xs = Array.from({ length: 200000 }, (_, i) => -6 + (12 * i) / 200000), out = [];
+  for (const k of Object.keys(NAMES)) {
+    const t0 = performance.now(); let s = 0;
+    for (const x of xs) s += (k === "simpson" ? Meth.simpson(x, SN()) : Meth[k](x)).v;
+    out.push(`${NAMES[k].padEnd(36)} ${((performance.now() - t0) / 200).toFixed(3)} µs/eval`);
+  }
+  $("benchres").textContent = out.join("\n");
+};
+ex1(); allTable(); ex2();
+window.addEventListener("resize", () => { ex1(); ex2(); });
+</script>
+</body>
+</html>

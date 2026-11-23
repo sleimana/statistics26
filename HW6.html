@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW6 · Statistical independence and the χ² test</title>
+<style>
+:root{
+  --ink:#111; --muted:#666; --paper:#fff; --side:#f6f4ee; --mustard:#e0a800; --rust:#c4452c; --teal:#1b7f79; --line:#e6e2d6;
+  --plot-fg:#222; --plot-grid:rgba(0,0,0,.08); --plot-bg:#fff;
+  --c1:#1b7f79; --c2:#c4452c; --c3:#e0a800; --c4:#5a4fcf; --c5:#7a9a01; --c6:#555;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:15px/1.6 Georgia,"Times New Roman",serif;color:var(--ink);background:var(--paper);display:grid;grid-template-columns:380px 1fr}
+.editor{background:var(--side);border-right:1px solid var(--line);padding:22px 20px;height:100vh;position:sticky;top:0;overflow:auto;font-family:system-ui,sans-serif;font-size:14px}
+.editor h1{font:800 20px system-ui;margin:0 0 4px;letter-spacing:-.3px}
+.editor .who{color:var(--muted);font-size:12px;margin-bottom:16px}
+.editor label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:14px 0 4px;font-weight:700}
+.editor select{width:100%;padding:7px;border:1px solid #cfc9b8;border-radius:4px;background:#fff;font:14px system-ui}
+.editor textarea{width:100%;height:280px;font:12px ui-monospace,Consolas,monospace;border:1px solid #cfc9b8;border-radius:4px;padding:8px;resize:vertical;background:#fff}
+.editor button{background:var(--ink);color:#fff;border:none;padding:9px 14px;border-radius:4px;font-weight:700;cursor:pointer;margin:10px 6px 0 0}
+.editor button.lite{background:#fff;color:var(--ink);border:1px solid var(--ink)}
+.editor .status{font-size:12px;color:var(--teal);margin-top:8px}
+.editor .err{color:var(--rust)}
+.report{padding:30px 46px 80px;min-width:0;max-width:1100px}
+.kicker{font:800 12px system-ui;letter-spacing:2px;color:var(--mustard);text-transform:uppercase}
+.report h2{font-size:28px;margin:4px 0 10px;line-height:1.2}
+.report h3{font:800 13px system-ui;letter-spacing:1.4px;text-transform:uppercase;margin:34px 0 8px;border-top:3px solid var(--ink);padding-top:8px}
+.big{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:16px 0}
+.big div{border-left:4px solid var(--mustard);padding:4px 12px}
+.big b{display:block;font:800 28px system-ui}
+.big span{font:12px system-ui;color:var(--muted)}
+table{border-collapse:collapse;font:13.5px system-ui;margin:8px 0;min-width:300px}
+th,td{padding:6px 12px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+th{text-align:right;font-weight:700} th:first-child,td:first-child{text-align:left}
+tr.tot td{border-top:2px solid var(--ink);font-weight:700}
+td.hot{background:rgba(196,69,44,.13)} td.cold{background:rgba(27,127,121,.13)}
+.tables{display:flex;flex-wrap:wrap;gap:30px}
+.tables > div{overflow-x:auto}
+.cap{font:12px system-ui;color:var(--muted)}
+canvas{width:100%;height:320px;display:block}
+.verdict{font-size:19px;border:2px solid var(--ink);padding:14px 18px;margin:16px 0;background:#fffbea}
+.eq{font-family:Cambria,"Times New Roman",serif;font-size:17px;padding:4px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media(max-width:1000px){body{grid-template-columns:1fr}.editor{position:static;height:auto}.grid2{grid-template-columns:1fr}.report{padding:20px}}
+</style>
+</head>
+<body>
+<div class="editor">
+  <h1>Independence Analyzer</h1>
+  <div class="who">Homework 6 · <span contenteditable="true">your name</span> · <span contenteditable="true">ID</span></div>
+  <label>dataset</label>
+  <select id="preset">
+    <option value="berkeley">UC Berkeley graduate admissions, fall 1973 (4 526 applicants)</option>
+    <option value="synthetic">Synthetic: MFA type × account compromised (2 000 accounts)</option>
+    <option value="custom">My own data (paste below)</option>
+  </select>
+  <label>raw records (CSV: one row per observation)</label>
+  <textarea id="csv" spellcheck="false"></textarea>
+  <div class="status" id="status"></div>
+  <label>variable X (rows)</label><select id="vx"></select>
+  <label>variable F (columns)</label><select id="vf"></select>
+  <label>stratify by (optional)</label><select id="vs"></select>
+  <label>significance level α</label><select id="alpha"><option>0.05</option><option>0.01</option><option>0.10</option></select>
+  <button id="run">Analyse</button><button class="lite" id="dl">Download CSV</button>
+  <p class="cap" style="margin-top:14px">The contingency table is never typed in by hand: the program reads the individual records and counts them.</p>
+</div>
+
+<div class="report">
+  <div class="kicker">Homework 6 · Statistical independence</div>
+  <h2 id="headline">Are two categorical variables independent?</h2>
+  <p id="intro"></p>
+  <div class="big" id="big"></div>
+
+  <h3>1 · Contingency table and marginal frequencies</h3>
+  <div class="tables"><div><div class="cap">absolute frequencies n<sub>ij</sub> with marginal totals</div><div id="tabAbs"></div></div>
+  <div><div class="cap">joint relative frequencies f<sub>ij</sub> = n<sub>ij</sub>/n and marginal distributions</div><div id="tabRel"></div></div></div>
+
+  <h3>2 · Conditional frequencies</h3>
+  <div class="tables"><div><div class="cap">distribution of F given X (row profiles) f(F = j | X = i) = n<sub>ij</sub>/n<sub>i·</sub></div><div id="tabCondF"></div></div>
+  <div><div class="cap">distribution of X given F (column profiles) f(X = i | F = j) = n<sub>ij</sub>/n<sub>·j</sub></div><div id="tabCondX"></div></div></div>
+  <div class="grid2"><canvas id="cmosaic"></canvas><canvas id="cprof"></canvas></div>
+  <p class="cap">Left: mosaic plot. Column widths are the marginal frequencies of X, and box heights are the conditional frequencies of F given X. Under independence all columns would be split at the same heights. Right: the conditional distributions side by side.</p>
+
+  <h3>3 · Expected frequencies under independence and Pearson's χ²</h3>
+  <div class="eq">e<sub>ij</sub> = n<sub>i·</sub> n<sub>·j</sub> / n &nbsp;&nbsp;&nbsp; χ² = Σ<sub>i,j</sub> (n<sub>ij</sub> − e<sub>ij</sub>)² / e<sub>ij</sub> &nbsp;&nbsp;&nbsp; d.f. = (r − 1)(c − 1)</div>
+  <div class="tables"><div><div class="cap">expected counts e<sub>ij</sub></div><div id="tabExp"></div></div>
+  <div><div class="cap">contributions (n − e)²/e, signed by n − e (red: more than expected; teal: fewer)</div><div id="tabContrib"></div></div></div>
+  <canvas id="cchi" style="height:260px"></canvas>
+  <div class="verdict" id="verdict"></div>
+
+  <h3>4 · Stratified view: is the association real?</h3>
+  <div id="strata"></div>
+  <canvas id="cstrata" style="height:300px"></canvas>
+
+  <h3>5 · Independence in probability and in statistics</h3>
+  <p><b>In probability.</b> Events A and B are independent when P(A ∩ B) = P(A)·P(B), equivalently P(A | B) = P(A): learning B does not change the probability of A. Two discrete random variables X and F are independent when the joint distribution factorises for <i>every</i> pair of values, P(X = x<sub>i</sub>, F = f<sub>j</sub>) = P(X = x<sub>i</sub>)·P(F = f<sub>j</sub>). Then every conditional distribution of F given X equals the marginal of F. This is a property of the population model, and it is either exactly true or false.</p>
+  <p><b>In statistics.</b> We only see a sample, so we use the empirical analogue: X and F are <i>empirically independent</i> when f<sub>ij</sub> = f<sub>i·</sub>·f<sub>·j</sub>, i.e. all row profiles are equal. In real data this almost never holds exactly, because random sampling produces small deviations even when the population variables are independent. The question becomes whether the deviations are larger than chance would produce. Pearson's χ² measures the total deviation between observed counts and the counts expected under independence. Under H₀ (independence), and when the expected counts are not too small (rule of thumb e<sub>ij</sub> ≥ 5), χ² approximately follows a chi-square distribution with (r−1)(c−1) degrees of freedom. A large χ² (small p-value) is evidence <i>against</i> independence. A small χ² does not prove independence: it only says the data are compatible with it. Effect size is a separate question. Cramér's V = √(χ²/(n·(min(r,c)−1))) rescales χ² to [0, 1], because with thousands of observations even tiny, irrelevant differences become "significant".</p>
+
+  <h3>6 · Association is not causation</h3>
+  <p id="causal"></p>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+// ---------------- datasets ----------------
+// Berkeley 1973, six largest departments (Bickel, Hammel & O'Connell, Science 1975; R dataset UCBAdmissions)
+const BERK = { A: { Male: [512, 313], Female: [89, 19] }, B: { Male: [353, 207], Female: [17, 8] }, C: { Male: [120, 205], Female: [202, 391] },
+               D: { Male: [138, 279], Female: [131, 244] }, E: { Male: [53, 138], Female: [94, 299] }, F: { Male: [22, 351], Female: [24, 317] } };
+function berkeleyCSV() {
+  const rows = ["id,gender,department,outcome"]; let id = 1;
+  for (const [dept, g] of Object.entries(BERK)) for (const [sex, [adm, rej]] of Object.entries(g)) {
+    for (let i = 0; i < adm; i++) rows.push(`${id++},${sex},${dept},Admitted`);
+    for (let i = 0; i < rej; i++) rows.push(`${id++},${sex},${dept},Rejected`);
+  }
+  return rows.join("\n");
+}
+function syntheticCSV() {
+  // SYNTHETIC data generated here for illustration: risk depends on MFA type, and on account role
+  const rng = makeRng(99), rows = ["id,mfa,role,compromised"];
+  const mfa = [["None", 0.35], ["SMS", 0.25], ["App", 0.25], ["Hardware key", 0.15]], base = { None: 0.09, SMS: 0.05, App: 0.025, "Hardware key": 0.006 };
+  for (let i = 1; i <= 2000; i++) {
+    let u = rng(), m = mfa[0][0]; for (const [k, p] of mfa) { if (u < p) { m = k; break; } u -= p; }
+    const role = rng() < 0.2 ? "Admin" : "User";
+    const p = base[m] * (role === "Admin" ? 1.8 : 1);
+    rows.push(`${i},${m},${role},${rng() < p ? "Yes" : "No"}`);
+  }
+  return rows.join("\n");
+}
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 3) throw new Error("need a header and at least two records");
+  const head = lines[0].split(",").map((s) => s.trim());
+  const recs = lines.slice(1).map((l, i) => { const v = l.split(",").map((s) => s.trim()); if (v.length !== head.length) throw new Error(`line ${i + 2}: expected ${head.length} fields`); return v; });
+  return { head, recs };
+}
+let DATA = null;
+function loadPreset() {
+  const p = $("preset").value;
+  if (p === "berkeley") $("csv").value = berkeleyCSV();
+  else if (p === "synthetic") $("csv").value = syntheticCSV();
+  else if (!$("csv").value.trim() || $("csv").value.startsWith("id,gender") || $("csv").value.startsWith("id,mfa")) $("csv").value = "id,X,F\n1,a,yes\n2,a,no\n3,b,yes\n4,b,yes\n5,c,no\n6,c,no";
+  readData(true);
+}
+function readData(resetVars) {
+  try {
+    DATA = parseCSV($("csv").value);
+    $("status").className = "status"; $("status").textContent = `${DATA.recs.length} records · columns: ${DATA.head.join(", ")}`;
+    if (resetVars) {
+      const cats = DATA.head.filter((h) => new Set(DATA.recs.map((r) => r[DATA.head.indexOf(h)])).size <= 30);
+      const opts = (sel) => cats.map((c) => `<option ${c === sel ? "selected" : ""}>${c}</option>`).join("");
+      const preset = $("preset").value;
+      const [x, f, s] = preset === "berkeley" ? ["gender", "outcome", "department"] : preset === "synthetic" ? ["mfa", "compromised", "role"] : [cats[0], cats[1], ""];
+      $("vx").innerHTML = opts(x); $("vf").innerHTML = opts(f); $("vs").innerHTML = `<option value="">(none)</option>` + opts(s);
+    }
+    return true;
+  } catch (e) { $("status").className = "status err"; $("status").textContent = e.message; return false; }
+}
+// ---------------- chi-square distribution ----------------
+function lgamma(z) { const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7]; if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z); z -= 1; let x = c[0]; for (let i = 1; i < 9; i++) x += c[i] / (z + i); const t = z + 7.5; return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x); }
+function gammaQ(a, x) { // regularized upper incomplete gamma Q(a,x)
+  if (x <= 0) return 1;
+  if (x < a + 1) { let sum = 1 / a, del = sum, ap = a; for (let n = 0; n < 500; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-15) break; } return 1 - sum * Math.exp(-x + a * Math.log(x) - lgamma(a)); }
+  let b = x + 1 - a, c = 1e300, d = 1 / b, h = d; // Lentz continued fraction
+  for (let i = 1; i < 500; i++) { const an = -i * (i - a); b += 2; d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300; c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300; d = 1 / d; const del = d * c; h *= del; if (Math.abs(del - 1) < 1e-15) break; }
+  return Math.exp(-x + a * Math.log(x) - lgamma(a)) * h;
+}
+const chi2p = (x, df) => gammaQ(df / 2, x / 2);
+const chi2pdf = (x, k) => (x <= 0 ? 0 : Math.exp((k / 2 - 1) * Math.log(x) - x / 2 - (k / 2) * Math.log(2) - lgamma(k / 2)));
+function chi2crit(alpha, df) { let lo = 0, hi = 1000; for (let i = 0; i < 200; i++) { const m = (lo + hi) / 2; if (chi2p(m, df) > alpha) lo = m; else hi = m; } return lo; }
+
+// ---------------- analysis ----------------
+function table(recs, ix, jf) {
+  const xs = [...new Set(recs.map((r) => r[ix]))].sort(), fs = [...new Set(recs.map((r) => r[jf]))].sort();
+  const n = xs.map(() => fs.map(() => 0));
+  for (const r of recs) n[xs.indexOf(r[ix])][fs.indexOf(r[jf])]++;
+  const ri = n.map((row) => row.reduce((a, b) => a + b, 0)), cj = fs.map((_, j) => n.reduce((a, row) => a + row[j], 0)), N = ri.reduce((a, b) => a + b, 0);
+  const e = n.map((row, i) => row.map((_, j) => (ri[i] * cj[j]) / N));
+  let chi = 0; n.forEach((row, i) => row.forEach((v, j) => { if (e[i][j] > 0) chi += (v - e[i][j]) ** 2 / e[i][j]; }));
+  const df = (xs.length - 1) * (fs.length - 1), p = df > 0 ? chi2p(chi, df) : 1, V = Math.sqrt(chi / (N * Math.max(1, Math.min(xs.length, fs.length) - 1)));
+  const minE = Math.min(...e.flat());
+  return { xs, fs, n, ri, cj, N, e, chi, df, p, V, minE };
+}
+const fmt = (v, d = 3) => (Number.isInteger(v) ? v.toLocaleString("en") : v.toFixed(d));
+const pct = (v) => (100 * v).toFixed(1) + "%";
+function html(T, cell, opts = {}) {
+  let h = `<table><tr><th>${opts.corner || ""}</th>${T.fs.map((f) => `<th>${f}</th>`).join("")}${opts.rowTot ? `<th>${opts.rowTot}</th>` : ""}</tr>`;
+  T.xs.forEach((x, i) => { h += `<tr><td><b>${x}</b></td>${T.fs.map((_, j) => cell(i, j)).join("")}${opts.rowTot ? `<td><b>${opts.rowVal(i)}</b></td>` : ""}</tr>`; });
+  if (opts.colTot) h += `<tr class="tot"><td>${opts.colTot}</td>${T.fs.map((_, j) => `<td>${opts.colVal(j)}</td>`).join("")}${opts.rowTot ? `<td>${opts.corner2 || ""}</td>` : ""}</tr>`;
+  return h + "</table>";
+}
+function mosaic(canvas, T) {
+  const dpr = devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight; canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const pal = [1, 2, 3, 4, 5, 6].map((i) => Plot.css("--c" + i)), L = 10, R = 10, Tp = 26, B = 40, gap = 4;
+  ctx.font = "600 12px system-ui"; ctx.fillStyle = "#222"; ctx.textAlign = "center"; ctx.fillText(`Mosaic: ${$("vx").value} × ${$("vf").value}`, w / 2, 16);
+  let x = L; const W = w - L - R - gap * (T.xs.length - 1), H = h - Tp - B;
+  T.xs.forEach((xv, i) => {
+    const cw = (W * T.ri[i]) / T.N; let y = Tp;
+    T.fs.forEach((fv, j) => {
+      const ch = (H * T.n[i][j]) / T.ri[i];
+      ctx.fillStyle = pal[j % pal.length]; ctx.globalAlpha = 0.85; ctx.fillRect(x, y, cw, ch - 1); ctx.globalAlpha = 1;
+      if (ch > 16 && cw > 34) { ctx.fillStyle = "#fff"; ctx.font = "11px system-ui"; ctx.fillText(pct(T.n[i][j] / T.ri[i]), x + cw / 2, y + ch / 2 + 4); }
+      y += ch;
+    });
+    // independence reference lines (marginal of F)
+    let yy = Tp; T.fs.slice(0, -1).forEach((_, j) => { yy += (H * T.cj[j]) / T.N; ctx.strokeStyle = "#000"; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + cw, yy); ctx.stroke(); ctx.setLineDash([]); });
+    ctx.fillStyle = "#222"; ctx.font = "12px system-ui"; ctx.fillText(xv, x + cw / 2, h - B + 16);
+    x += cw + gap;
+  });
+  ctx.textAlign = "left"; let lx = L; T.fs.forEach((f, j) => { ctx.fillStyle = pal[j % pal.length]; ctx.fillRect(lx, h - 14, 12, 10); ctx.fillStyle = "#222"; ctx.fillText(f, lx + 16, h - 5); lx += ctx.measureText(f).width + 34; });
+  ctx.fillText("- - - if independent", lx + 6, h - 5);
+}
+function analyse() {
+  if (!readData(false)) return;
+  const ix = DATA.head.indexOf($("vx").value), jf = DATA.head.indexOf($("vf").value);
+  if (ix === jf) { $("status").className = "status err"; $("status").textContent = "choose two different variables"; return; }
+  const T = table(DATA.recs, ix, jf), alpha = +$("alpha").value, crit = chi2crit(alpha, T.df);
+  const X = $("vx").value, F = $("vf").value, preset = $("preset").value;
+  $("headline").textContent = `Is ${F} independent of ${X}?`;
+  $("intro").innerHTML = preset === "berkeley"
+    ? `Data: the ${T.N.toLocaleString("en")} applications to the six largest graduate departments of the University of California, Berkeley, in fall 1973 (Bickel, Hammel &amp; O'Connell, <i>Science</i> 1975). The page expands the published counts into one record per applicant: (id, gender, department, outcome). <b>X</b> = ${X}, <b>F</b> = ${F}.`
+    : preset === "synthetic" ? `Synthetic data generated in this page (seeded) for ${T.N.toLocaleString("en")} accounts: the type of multi-factor authentication, the account role, and whether the account was compromised in a year. <b>X</b> = ${X}, <b>F</b> = ${F}.` : `Your data: ${T.N} records. <b>X</b> = ${X}, <b>F</b> = ${F}.`;
+  $("big").innerHTML = `<div><b>${T.N.toLocaleString("en")}</b><span>observations</span></div><div><b>${T.chi.toFixed(2)}</b><span>Pearson χ² on ${T.df} d.f.</span></div><div><b>${T.p < 1e-4 ? T.p.toExponential(1) : T.p.toFixed(4)}</b><span>p-value P(χ²<sub>${T.df}</sub> ≥ observed)</span></div><div><b>${T.V.toFixed(3)}</b><span>Cramér's V (0 = independent, 1 = fully dependent)</span></div>`;
+  $("tabAbs").innerHTML = html(T, (i, j) => `<td>${fmt(T.n[i][j])}</td>`, { rowTot: "n<sub>i·</sub>", rowVal: (i) => fmt(T.ri[i]), colTot: "n<sub>·j</sub>", colVal: (j) => fmt(T.cj[j]), corner2: fmt(T.N), corner: `${X} \\ ${F}` });
+  $("tabRel").innerHTML = html(T, (i, j) => `<td>${(T.n[i][j] / T.N).toFixed(4)}</td>`, { rowTot: "f<sub>i·</sub>", rowVal: (i) => (T.ri[i] / T.N).toFixed(4), colTot: "f<sub>·j</sub>", colVal: (j) => (T.cj[j] / T.N).toFixed(4), corner2: "1.0000" });
+  $("tabCondF").innerHTML = html(T, (i, j) => `<td>${pct(T.n[i][j] / T.ri[i])}</td>`, { rowTot: "total", rowVal: () => "100%", colTot: "marginal of F", colVal: (j) => pct(T.cj[j] / T.N) });
+  $("tabCondX").innerHTML = html(T, (i, j) => `<td>${pct(T.n[i][j] / T.cj[j])}</td>`, { rowTot: "marginal of X", rowVal: (i) => pct(T.ri[i] / T.N), colTot: "total", colVal: () => "100%" });
+  $("tabExp").innerHTML = html(T, (i, j) => `<td>${T.e[i][j].toFixed(2)}</td>`, {});
+  $("tabContrib").innerHTML = html(T, (i, j) => { const d = T.n[i][j] - T.e[i][j], c = d * d / T.e[i][j]; return `<td class="${c > 3.84 ? (d > 0 ? "hot" : "cold") : ""}">${d >= 0 ? "+" : "−"}${c.toFixed(2)}</td>`; }, {});
+  mosaic($("cmosaic"), T);
+  Plot.bars($("cprof"), { labels: T.xs, groups: T.fs.map((f, j) => ({ values: T.xs.map((_, i) => T.n[i][j] / T.ri[i]), label: `${F} = ${f}` })), ymax: 1, title: `Conditional distribution of ${F} given ${X}` });
+  const xmax = Math.max(T.chi * 1.15, crit * 1.6, T.df + 4 * Math.sqrt(2 * T.df));
+  const xs = Array.from({ length: 300 }, (_, i) => 0.001 + (xmax * i) / 299);
+  Plot.line($("cchi"), { series: [{ x: xs, y: xs.map((v) => chi2pdf(v, T.df)), label: `χ² density, ${T.df} d.f. (distribution under independence)` }, { x: [crit, crit], y: [0, chi2pdf(Math.max(crit, 0.5), T.df) * 1.5 + 0.02], label: `critical value ${crit.toFixed(2)} (α = ${alpha})`, color: Plot.css("--c3"), width: 2 }, { x: [Math.min(T.chi, xmax), Math.min(T.chi, xmax)], y: [0, chi2pdf(Math.max(crit, 0.5), T.df) * 1.5 + 0.02], label: `observed χ² = ${T.chi.toFixed(2)}${T.chi > xmax ? " (off scale)" : ""}`, color: Plot.css("--c2"), width: 3 }], xlabel: "χ²" });
+  const dep = T.p < alpha;
+  const small = T.minE < 5 ? ` <span style="color:var(--rust)">Caution: the smallest expected count is ${T.minE.toFixed(2)} &lt; 5, so the χ² approximation is unreliable. Merge categories or use an exact test.</span>` : "";
+  $("verdict").innerHTML = dep
+    ? `<b>Reject independence.</b> χ² = ${T.chi.toFixed(2)} > ${crit.toFixed(2)} (p = ${T.p.toExponential(2)} &lt; α = ${alpha}). The conditional distributions of ${F} differ across ${X} by more than sampling noise can explain: in this data the two variables are <b>statistically dependent</b>. Strength of association: Cramér's V = ${T.V.toFixed(3)}.${small}`
+    : `<b>Do not reject independence.</b> χ² = ${T.chi.toFixed(2)} ≤ ${crit.toFixed(2)} (p = ${T.p.toFixed(3)} ≥ α = ${alpha}). The data are compatible with ${X} and ${F} being independent. This is not proof of independence, only absence of evidence against it.${small}`;
+  strata(T, ix, jf, alpha);
+  causal(T, preset);
+}
+function strata(Tall, ix, jf, alpha) {
+  const s = $("vs").value;
+  if (!s || DATA.head.indexOf(s) === ix || DATA.head.indexOf(s) === jf) { $("strata").innerHTML = '<p class="cap">Choose a third variable under "stratify by" to repeat the analysis inside each of its levels.</p>'; $("cstrata").style.display = "none"; return; }
+  $("cstrata").style.display = "block";
+  const is = DATA.head.indexOf(s), levels = [...new Set(DATA.recs.map((r) => r[is]))].sort();
+  const tj = Tall.cj.indexOf(Math.min(...Tall.cj)), target = Tall.fs[tj];
+  const rows = levels.map((lv) => {
+    const T = table(DATA.recs.filter((r) => r[is] === lv), ix, jf);
+    const rate = Tall.xs.map((x) => { const i = T.xs.indexOf(x), j = T.fs.indexOf(target); if (i >= 0 && j < 0) return 0; return i < 0 || j < 0 ? NaN : T.n[i][j] / T.ri[i]; });
+    const size = Tall.xs.map((x) => { const i = T.xs.indexOf(x); return i < 0 ? 0 : T.ri[i]; });
+    return { lv, T, rate, size };
+  });
+  const overall = Tall.xs.map((_, i) => Tall.n[i][tj] / Tall.ri[i]);
+  $("strata").innerHTML = `<p>Share of <b>${$("vf").value} = ${target}</b> by ${$("vx").value}, overall and inside each level of <b>${s}</b>:</p><div style="overflow-x:auto"><table><tr><th>${s}</th>${Tall.xs.map((x) => `<th>${x}: rate (n)</th>`).join("")}<th>χ²</th><th>p</th></tr>` +
+    `<tr class="tot"><td>all (pooled)</td>${overall.map((r, i) => `<td>${pct(r)} (${Tall.ri[i]})</td>`).join("")}<td>${Tall.chi.toFixed(2)}</td><td>${Tall.p < 1e-4 ? Tall.p.toExponential(1) : Tall.p.toFixed(4)}</td></tr>` +
+    rows.map((r) => `<tr><td>${r.lv}</td>${r.rate.map((v, i) => `<td>${Number.isNaN(v) ? "—" : pct(v)} (${r.size[i]})</td>`).join("")}<td>${r.T.chi.toFixed(2)}</td><td>${r.T.df ? (r.T.p < 1e-4 ? r.T.p.toExponential(1) : r.T.p.toFixed(4)) : "—"}</td></tr>`).join("") + "</table></div>";
+  Plot.bars($("cstrata"), { labels: ["pooled", ...levels], groups: Tall.xs.map((x, i) => ({ values: [overall[i], ...rows.map((r) => r.rate[i] || 0)], label: `${$("vx").value} = ${x}` })), ymax: 1, title: `P(${$("vf").value} = ${target} | ${$("vx").value}) pooled and within each ${s}` });
+  // where do the groups apply? distribution of X across strata
+  const mix = Tall.xs.map((x) => levels.map((lv) => rows.find((r) => r.lv === lv).size[Tall.xs.indexOf(x)] / Tall.ri[Tall.xs.indexOf(x)]));
+  $("strata").innerHTML += `<p class="cap">How each ${$("vx").value} group is spread over ${s}: ${Tall.xs.map((x, i) => `<b>${x}</b> ${levels.map((lv, k) => `${lv} ${pct(mix[i][k])}`).join(", ")}`).join(" &nbsp;|&nbsp; ")}</p>`;
+}
+function causal(T, preset) {
+  if (preset === "berkeley" && T.xs.includes("Male") && T.fs[0] === "Admitted") {
+    $("causal").innerHTML = `Pooled over departments, men were admitted at ${pct(T.n[T.xs.indexOf("Male")][0] / T.ri[T.xs.indexOf("Male")])} and women at ${pct(T.n[T.xs.indexOf("Female")][0] / T.ri[T.xs.indexOf("Female")])}. The χ² test confirms beyond doubt that admission and gender are <i>statistically dependent</i>. It is tempting to read this as discrimination against women, which would be a causal claim. The stratified table (choose "department") shows why the data do not support it. Inside each department women were admitted at a similar or <i>higher</i> rate in four of six departments (in department A, 82% against 62%). Women applied mostly to the departments with low admission rates (C–F), and men mostly to A and B. Department is a <b>confounder</b>: it influences both the gender mix of the applicants and the chance of admission. Mixing the departments creates an association that reverses or vanishes inside them, which is <b>Simpson's paradox</b>.<br><br>The lesson is general. The χ² test answers "are the variables associated in this data?", and it is silent on <i>why</i>. Association can come from a causal effect in either direction (X → F or F → X), from a common cause (a confounder), from the way the sample was selected, or from chance (with p = α we still expect false alarms). Causal conclusions need a design that breaks these alternatives: randomised experiments, or explicit adjustment for confounders together with assumptions that are stated and defended.`;
+  } else if (preset === "synthetic") {
+    $("causal").innerHTML = `Compromise rates fall from "None" to "Hardware key", and the χ² test detects a strong dependence. Here we <i>know</i> the generating mechanism (written in the page), so in this toy world the effect is causal by construction. In real data the same table would not prove that hardware keys prevent compromise. Security-conscious users may both choose hardware keys <i>and</i> avoid risky behaviour (confounding). Admin accounts may be forced to use stronger MFA while also being targeted more (stratify by role to check). Compromises may also be detected more easily on some MFA types (measurement bias). Statistical dependence is necessary for a causal effect to show up in the data, but it is not sufficient to establish one.`;
+  } else $("causal").innerHTML = `A significant χ² shows association, not causation. Think about confounders (stratify by them above), reverse causation, selection effects and chance before drawing causal conclusions.`;
+}
+$("preset").onchange = () => { loadPreset(); analyse(); };
+$("run").onclick = analyse;
+["vx", "vf", "vs", "alpha"].forEach((id) => $(id).addEventListener("change", analyse));
+$("csv").addEventListener("change", () => { $("preset").value = "custom"; readData(true); analyse(); });
+$("dl").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([$("csv").value], { type: "text/csv" })); a.download = "records.csv"; a.click(); };
+window.addEventListener("resize", analyse);
+loadPreset(); analyse();
+</script>
+</body>
+</html>

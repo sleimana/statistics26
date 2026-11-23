@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW3 · Penetration scores: LLN and CLT</title>
+<style>
+:root{
+  --side:#23215b; --side2:#2f2c78; --bg:#eef0f6; --card:#fff; --ink:#1d2033; --muted:#6b7088; --acc:#5b50e8; --acc2:#f0a020;
+  --plot-fg:#3b3f55; --plot-grid:rgba(60,70,110,.10); --plot-bg:#fff;
+  --c1:#5b50e8; --c2:#f0a020; --c3:#14a37f; --c4:#e0457b; --c5:#1e88e5; --c6:#8d6e63;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.55 "Segoe UI",system-ui,sans-serif;display:grid;grid-template-columns:270px 1fr;min-height:100vh}
+aside{background:var(--side);color:#dcdcf5;padding:22px 18px;position:sticky;top:0;height:100vh;overflow:auto}
+aside h1{font-size:18px;margin:0 0 4px;color:#fff}
+aside p{font-size:12px;color:#a9a7d8;margin:0 0 18px}
+aside .grp{background:var(--side2);border-radius:10px;padding:12px;margin-bottom:12px}
+aside label{display:block;font-size:12px;color:#bdbbe8;margin:6px 0 2px}
+aside input,aside select{width:100%;background:#1b1948;color:#fff;border:1px solid #4a46a0;border-radius:6px;padding:6px 8px;font-size:13px}
+aside output{float:right;color:#fff;font-weight:600}
+aside button{width:100%;background:var(--acc2);color:#2a1a00;border:none;border-radius:8px;padding:10px;font-weight:700;font-size:14px;cursor:pointer;margin-top:6px}
+main{padding:22px 26px 60px;min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 3px rgba(20,20,60,.08)}
+.kpi .v{font-size:22px;font-weight:700;color:var(--acc)} .kpi .l{font-size:12px;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:16px}
+.card{background:var(--card);border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(20,20,60,.08)}
+.card h2{font-size:15px;margin:0 0 2px} .card .hint{font-size:12px;color:var(--muted);margin:0 0 8px}
+.wide{grid-column:1/-1}
+canvas{width:100%;height:270px;display:block}
+.seg{display:inline-flex;background:#e7e8f2;border-radius:8px;padding:3px;margin:0 6px 8px 0}
+.seg button{border:none;background:transparent;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;color:var(--muted)}
+.seg button.on{background:#fff;color:var(--acc);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 8px;border-bottom:1px solid #e6e7ef;text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;background:#f7f7fb}
+.prose p{margin:6px 0 10px}
+.prose h3{font-size:14px;margin:14px 0 4px;color:var(--acc)}
+.formula{font-family:Cambria,"Times New Roman",serif;font-size:15px;background:#f5f5fc;border-radius:8px;padding:8px 12px;margin:6px 0}
+@media (max-width:900px){body{grid-template-columns:1fr} aside{position:static;height:auto} .cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Penetration Lab</h1>
+  <p>Homework 3 · n systems, m attackers, i.i.d. increments<br>Student: <span contenteditable="true">your name</span> · <span contenteditable="true">ID</span></p>
+  <div class="grp">
+    <label>score model</label>
+    <select id="model"><option value="bern">Bernoulli: Xᵢ ∈ {0,1}</option><option value="rad">Rademacher: Xᵢ ∈ {−1,+1}</option></select>
+    <label>p = P(Xᵢ = 1) <output id="pv">0.30</output></label><input id="p" type="range" min="0.01" max="0.99" step="0.01" value="0.30">
+  </div>
+  <div class="grp">
+    <label>n systems (max horizon) <output id="nv"></output></label><input id="n" type="range" min="2" max="4" step="0.1" value="3.5">
+    <label>m attackers (trajectories) <output id="mv"></output></label><input id="m" type="range" min="1.3" max="3.3" step="0.1" value="2.7">
+    <label>trajectories drawn <output id="tv">20</output></label><input id="tr" type="range" min="1" max="60" value="20">
+    <label>ε for the LLN <output id="ev">0.05</output></label><input id="eps" type="range" min="0.01" max="0.2" step="0.01" value="0.05">
+    <label>random seed</label><input id="seed" type="number" value="42">
+  </div>
+  <button id="go">Run simulation</button>
+  <p style="margin-top:14px">Every chart is computed in your browser from m × n simulated increments (seeded generator, reproducible).</p>
+</aside>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="cards">
+    <div class="card wide"><h2>Sample trajectories</h2><p class="hint">Each line is one attacker going through the systems k = 1…n. Dashed lines: theoretical mean and ±2 standard deviations.</p>
+      <div class="seg" id="trajsel"><button data-q="S" class="on">Total Sₖ</button><button data-q="A">Average Sₖ/k</button><button data-q="N">Normalised Sₖ/√k</button></div>
+      <canvas id="ctraj" style="height:320px"></canvas></div>
+    <div class="card"><h2>Distributions as n grows</h2><p class="hint">Histogram over the m attackers at a chosen n, with the normal approximation.</p>
+      <div class="seg" id="distq"><button data-q="S" class="on">Sₙ</button><button data-q="A">Sₙ/n</button><button data-q="N">Sₙ/√n</button><button data-q="Z">(Sₙ−nμ)/(σ√n)</button></div>
+      <div class="seg" id="distn"></div>
+      <canvas id="cdist"></canvas></div>
+    <div class="card"><h2>Same quantity, several n, on one axis</h2><p class="hint">Sₙ spreads out, Sₙ/n concentrates, Sₙ/√n keeps a fixed width.</p>
+      <div class="seg" id="ovq"><button data-q="S">Sₙ</button><button data-q="A" class="on">Sₙ/n</button><button data-q="N">Sₙ/√n</button></div>
+      <canvas id="cover"></canvas></div>
+    <div class="card"><h2>Variance under the three normalisations</h2><p class="hint">Empirical variance across attackers (points) vs theory (lines), log–log.</p><canvas id="cvar"></canvas></div>
+    <div class="card"><h2>Law of Large Numbers: P(|Sₙ/n − μ| &gt; ε)</h2><p class="hint">Estimated by the share of attackers outside the ε-band, with the Chebyshev bound σ²/(nε²).</p><canvas id="clln"></canvas></div>
+    <div class="card"><h2>Central Limit Theorem: distance to N(0,1)</h2><p class="hint">Kolmogorov–Smirnov distance sup|F̂(z) − Φ(z)| of the standardised score. The dashed line is the sampling-noise level 1.36/√m.</p><canvas id="cclt"></canvas></div>
+    <div class="card"><h2>Normal QQ-plot at the largest n</h2><p class="hint">Points on the diagonal mean the standardised scores are normal.</p><canvas id="cqq"></canvas></div>
+    <div class="card wide"><h2>Moments table</h2><div id="mtab" style="overflow-x:auto"></div></div>
+    <div class="card wide"><h2>Systems and attackers: the aggregate picture</h2><p class="hint">How the system size n and the number of attackers m shape what a defender observes.</p>
+      <canvas id="cagg" style="height:280px"></canvas><div id="aggtxt" class="prose"></div></div>
+    <div class="card wide prose">
+      <h2>Model and interpretation</h2>
+      <h3>The model</h3>
+      <p>Attacker j ∈ {1,…,m} probes systems i = 1,…,n in sequence. On each system it gains a score increment X<sub>i</sub><sup>(j)</sup>, i.i.d. across systems and attackers. Its running score after k systems is a random walk:</p>
+      <div class="formula">S<sub>k</sub><sup>(j)</sup> = X<sub>1</sub><sup>(j)</sup> + … + X<sub>k</sub><sup>(j)</sup>, &nbsp; μ = E[X], &nbsp; σ² = Var X</div>
+      <p><b>Bernoulli:</b> μ = p, σ² = p(1−p). A step is a successful penetration (1) or a failure (0), so S<sub>n</sub> ~ Binomial(n, p) counts breached systems. <b>Rademacher:</b> μ = 0, σ² = 1. Each step moves the attacker forward or backward (a gained or lost foothold), the symmetric zero-drift case.</p>
+      <h3>The three quantities</h3>
+      <div class="formula">E[S<sub>n</sub>] = nμ, Var S<sub>n</sub> = nσ² &nbsp;|&nbsp; E[S<sub>n</sub>/n] = μ, Var = σ²/n &nbsp;|&nbsp; E[S<sub>n</sub>/√n] = √n μ, Var = σ²</div>
+      <p>Variances of independent terms add, so the total score spreads like √n. Dividing by n shrinks the spread like 1/√n, and that is the <b>Law of Large Numbers</b>: S<sub>n</sub>/n → μ in probability (Chebyshev gives P(|S<sub>n</sub>/n − μ| &gt; ε) ≤ σ²/(nε²)). Dividing by √n is the unique scaling that keeps the variance constant. The <b>Central Limit Theorem</b> says the shape then converges: in the Rademacher case S<sub>n</sub>/√n → N(0,1) in distribution. In the Bernoulli case S<sub>n</sub>/√n has mean p√n → ∞, so it must be centred: (S<sub>n</sub> − np)/√(np(1−p)) → N(0,1).</p>
+      <h3>What it means for systems and attackers</h3>
+      <p>• <b>More systems (n ↑)</b>: the <i>total</i> damage of each attacker becomes larger and more spread out in absolute terms (±σ√n). The <i>rate</i> S<sub>n</sub>/n becomes predictable: on a large infrastructure every attacker converges to the same breach rate p, so p, not luck, decides the outcome. In the symmetric case the average progress is zero, but individual attackers still wander ±√n away. Big infrastructures show bigger extremes even with no drift.</p>
+      <p>• <b>More attackers (m ↑)</b> does not change the law of any single trajectory. It gives more independent samples, so the histograms, the LLN probabilities and the KS distances are estimated more precisely (noise ∝ 1/√m). It also changes the aggregate: the campaign total Σ<sub>j</sub>S<sub>n</sub><sup>(j)</sup> has mean m n μ and standard deviation σ√(mn). The <i>worst-case</i> attacker, the maximum over m, grows roughly like nμ + σ√n·√(2 ln m). A defender facing many attackers must plan for this tail, not for the average.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+let SIM = null, TRAJQ = "S", DISTQ = "S", DISTN = null, OVQ = "A";
+const nVal = () => Math.round(10 ** +$("n").value), mVal = () => Math.round(10 ** +$("m").value);
+function labels() { $("pv").textContent = (+$("p").value).toFixed(2); $("nv").textContent = nVal(); $("mv").textContent = mVal(); $("tv").textContent = $("tr").value; $("ev").textContent = (+$("eps").value).toFixed(2); $("p").disabled = $("model").value === "rad"; }
+["p", "n", "m", "tr", "eps", "model"].forEach((id) => $(id).addEventListener("input", labels));
+
+function simulate() {
+  const model = $("model").value, p = model === "rad" ? 0.5 : +$("p").value, n = nVal(), m = mVal(), rng = makeRng(+$("seed").value);
+  const mu = model === "rad" ? 0 : p, s2 = model === "rad" ? 1 : p * (1 - p);
+  // checkpoints (approx. log-spaced) where we record S_k for all attackers
+  const cps = [...new Set([1, 2, 3, 5, 8, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000, n])].filter((k) => k <= n).sort((a, b) => a - b);
+  const rec = cps.map(() => new Float64Array(m));
+  const T = Math.min(+$("tr").value, m), paths = Array.from({ length: T }, () => new Float64Array(n + 1));
+  const step = model === "rad" ? () => (rng() < 0.5 ? -1 : 1) : () => (rng() < p ? 1 : 0);
+  for (let j = 0; j < m; j++) {
+    let S = 0, c = 0;
+    for (let k = 1; k <= n; k++) {
+      S += step();
+      if (j < T) paths[j][k] = S;
+      if (k === cps[c]) { rec[c][j] = S; c++; }
+    }
+  }
+  SIM = { model, p, n, m, mu, s2, cps, rec, paths, eps: +$("eps").value, lattice: model === "rad" ? 2 : 1 };
+  const ns = cps.filter((k) => k >= 5);
+  const pick = [ns[0], ns[Math.floor(ns.length / 3)], ns[Math.floor((2 * ns.length) / 3)], n].filter((v, i, a) => a.indexOf(v) === i);
+  $("distn").innerHTML = pick.map((k) => `<button data-n="${k}">n = ${k}</button>`).join("");
+  DISTN = n;
+  bindSeg("distn", (b) => { DISTN = +b.dataset.n; drawDist(); }, (b) => +b.dataset.n === DISTN);
+  drawAll();
+}
+const q = (Sv, k, kind) => (kind === "S" ? Sv : kind === "A" ? Sv / k : kind === "N" ? Sv / Math.sqrt(k) : (Sv - k * SIM.mu) / Math.sqrt(k * SIM.s2));
+const theo = (k, kind) => ({ S: [k * SIM.mu, k * SIM.s2], A: [SIM.mu, SIM.s2 / k], N: [Math.sqrt(k) * SIM.mu, SIM.s2], Z: [0, 1] })[kind];
+const meanVar = (a) => { let m = 0, M2 = 0, i = 0; for (const x of a) { i++; const d = x - m; m += d / i; M2 += d * (x - m); } return [m, M2 / (i - 1)]; };
+
+function drawTraj() {
+  const { paths, n } = SIM, ks = [], step = Math.max(1, Math.floor(n / 800));
+  for (let k = 1; k <= n; k += step) ks.push(k);
+  const series = paths.map((P) => ({ x: ks, y: ks.map((k) => q(P[k], k, TRAJQ)), width: 1, alpha: 0.55, color: Plot.css("--c1") }));
+  const [m0] = theo(1, TRAJQ);
+  series.push({ x: ks, y: ks.map((k) => theo(k, TRAJQ)[0]), color: Plot.css("--c2"), width: 2, dash: [6, 4], label: "mean" });
+  series.push({ x: ks, y: ks.map((k) => theo(k, TRAJQ)[0] + 2 * Math.sqrt(theo(k, TRAJQ)[1])), color: Plot.css("--c4"), width: 1.6, dash: [3, 3], label: "mean ± 2 sd" });
+  series.push({ x: ks, y: ks.map((k) => theo(k, TRAJQ)[0] - 2 * Math.sqrt(theo(k, TRAJQ)[1])), color: Plot.css("--c4"), width: 1.6, dash: [3, 3] });
+  if (TRAJQ === "A") {
+    series.push({ x: ks, y: ks.map(() => SIM.mu + SIM.eps), color: Plot.css("--c3"), width: 1.4, label: `μ ± ε (ε = ${SIM.eps})` });
+    series.push({ x: ks, y: ks.map(() => SIM.mu - SIM.eps), color: Plot.css("--c3"), width: 1.4 });
+  }
+  const yl = { S: "Sₖ", A: "Sₖ / k", N: "Sₖ / √k" }[TRAJQ];
+  let yr; if (TRAJQ === "A") yr = [SIM.mu - Math.max(0.5, 3 * SIM.eps), SIM.mu + Math.max(0.5, 3 * SIM.eps)]; if (SIM.model === "bern" && TRAJQ === "A") yr = [-0.05, 1.05];
+  Plot.line($("ctraj"), { series, xlog: TRAJQ !== "S", xlabel: TRAJQ !== "S" ? "systems visited k (log scale)" : "systems visited k", ylabel: yl, yr, title: `${paths.length} attackers · ${SIM.model === "rad" ? "Rademacher" : "Bernoulli p = " + SIM.p}` });
+}
+function latticeBins(vals, scale) {
+  let lo = Infinity, hi = -Infinity; for (const v of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const h = SIM.lattice * scale, L = Math.round((hi - lo) / h) + 1;
+  if (L <= 70) return { bins: L, xr: [lo - h / 2, hi + h / 2] };
+  return { bins: 45, xr: [lo, hi] };
+}
+function drawDist() {
+  const c = SIM.cps.indexOf(DISTN), k = DISTN, vals = Array.from(SIM.rec[c], (S) => q(S, k, DISTQ));
+  const scale = { S: 1, A: 1 / k, N: 1 / Math.sqrt(k), Z: 1 / Math.sqrt(k * SIM.s2) }[DISTQ];
+  const { bins, xr } = latticeBins(vals, scale);
+  const [mu, v] = theo(k, DISTQ), sd = Math.sqrt(v);
+  const overlay = [{ fn: (x) => Normal.pdf((x - mu) / sd) / sd, label: `N(${+mu.toFixed(3)}, ${+v.toPrecision(3)})`, color: Plot.css("--c2") }];
+  if (DISTQ === "N" && SIM.model === "rad") overlay[0].label = "N(0,1): CLT limit";
+  if (DISTQ === "N" && SIM.model === "bern") overlay.push({ fn: (x) => Normal.pdf(x), label: "N(0,1) (not the limit: Sₙ/√n is not centred)", color: Plot.css("--c4"), dash: [5, 4] });
+  Plot.hist($("cdist"), { data: vals, bins, xr, density: true, overlay, label: `${{ S: "Sₙ", A: "Sₙ/n", N: "Sₙ/√n", Z: "standardised" }[DISTQ]} at n = ${k}`, title: `m = ${SIM.m} attackers`, xlabel: "value" });
+}
+function drawOverlay() {
+  const ns = SIM.cps.filter((k) => k >= 10); const pick = [ns[0], ns[Math.floor(ns.length / 2)], SIM.n].filter((v, i, a) => a.indexOf(v) === i);
+  const sets = pick.map((k) => ({ data: Array.from(SIM.rec[SIM.cps.indexOf(k)], (S) => q(S, k, OVQ)), label: "n = " + k }));
+  Plot.hist($("cover"), { sets, bins: 50, density: true, title: { S: "Sₙ", A: "Sₙ/n", N: "Sₙ/√n" }[OVQ] + " for three values of n", xlabel: "value" });
+}
+function drawStats() {
+  const { cps, rec, mu, s2, eps, m } = SIM;
+  const rows = [], lln = [], ks = [], vS = [], vA = [], vN = [];
+  cps.forEach((k, c) => {
+    const S = rec[c];
+    const [mS, VS] = meanVar(S), [mA, VA] = meanVar(Array.from(S, (x) => x / k)), [mN, VN] = meanVar(Array.from(S, (x) => x / Math.sqrt(k)));
+    vS.push(VS); vA.push(VA); vN.push(VN);
+    let out = 0; for (const x of S) if (Math.abs(x / k - mu) > eps) out++;
+    lln.push(out / m);
+    // KS distance of standardised values to N(0,1), including both sides of each jump
+    const z = Array.from(S, (x) => (x - k * mu) / Math.sqrt(k * s2)).sort((a, b) => a - b);
+    let D = 0;
+    for (let i = 0; i < z.length; ) {
+      let j = i; while (j < z.length && z[j] === z[i]) j++;
+      const F = Normal.cdf(z[i]); D = Math.max(D, Math.abs(j / z.length - F), Math.abs(i / z.length - F)); i = j;
+    }
+    ks.push(D);
+    rows.push([k, mS, k * mu, VS, k * s2, mA, VA, s2 / k, mN, VN, s2, out / m, D]);
+  });
+  const f = (v) => (Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toPrecision(3));
+  $("mtab").innerHTML = `<table><tr><th>n</th><th>mean Sₙ</th><th>nμ</th><th>var Sₙ</th><th>nσ²</th><th>mean Sₙ/n</th><th>var Sₙ/n</th><th>σ²/n</th><th>mean Sₙ/√n</th><th>var Sₙ/√n</th><th>σ²</th><th>P̂(|Sₙ/n−μ|&gt;ε)</th><th>KS dist.</th></tr>` +
+    rows.filter((r) => r[0] >= 5).map((r) => `<tr>${r.map((v, i) => `<td>${i === 0 ? v : f(v)}</td>`).join("")}</tr>`).join("") + "</table>";
+  Plot.line($("cvar"), { series: [
+    { x: cps, y: vS, points: true, label: "var Sₙ", color: Plot.css("--c1") }, { x: cps, y: cps.map((k) => k * s2), color: Plot.css("--c1"), dash: [5, 4] },
+    { x: cps, y: vA, points: true, label: "var Sₙ/n", color: Plot.css("--c4") }, { x: cps, y: cps.map((k) => s2 / k), color: Plot.css("--c4"), dash: [5, 4] },
+    { x: cps, y: vN, points: true, label: "var Sₙ/√n", color: Plot.css("--c3") }, { x: cps, y: cps.map(() => s2), color: Plot.css("--c3"), dash: [5, 4] }],
+    xlog: true, ylog: true, xlabel: "n", ylabel: "variance" });
+  Plot.line($("clln"), { series: [{ x: cps, y: lln, points: true, connect: true, label: "simulated" }, { x: cps, y: cps.map((k) => Math.min(1, s2 / (k * eps * eps))), dash: [5, 4], label: "Chebyshev bound", color: Plot.css("--c2") },
+    { x: cps, y: cps.map((k) => 2 * (1 - Normal.cdf((eps * Math.sqrt(k)) / Math.sqrt(s2)))), label: "normal approximation", color: Plot.css("--c3"), dash: [2, 3] }], xlog: true, yr: [0, 1.05], xlabel: "n", ylabel: "probability" });
+  Plot.line($("cclt"), { series: [{ x: cps, y: ks, points: true, connect: true, label: "KS distance" }, { x: cps, y: cps.map(() => 1.36 / Math.sqrt(m)), dash: [5, 4], label: "noise level 1.36/√m", color: Plot.css("--c2") },
+    { x: cps, y: cps.map((k) => Math.min(1, 0.4748 * (SIM.model === "rad" ? 1 : (SIM.p ** 2 + (1 - SIM.p) ** 2) / Math.sqrt(SIM.s2)) / Math.sqrt(k))), dash: [2, 3], label: "Berry–Esseen bound", color: Plot.css("--c4") }], xlog: true, ylog: true, xlabel: "n", ylabel: "sup |F̂ − Φ|" });
+  // QQ plot at max n
+  const zz = Array.from(rec[cps.length - 1], (x) => (x - SIM.n * mu) / Math.sqrt(SIM.n * s2)).sort((a, b) => a - b);
+  const th = zz.map((_, i) => invNorm((i + 0.5) / zz.length));
+  const stepq = Math.max(1, Math.floor(zz.length / 600));
+  Plot.line($("cqq"), { series: [{ x: th.filter((_, i) => i % stepq === 0), y: zz.filter((_, i) => i % stepq === 0), points: true, r: 2, label: `n = ${SIM.n}` }, { x: [-4, 4], y: [-4, 4], color: Plot.css("--c2"), dash: [5, 4], label: "y = x" }], xr: [-4, 4], yr: [-4, 4], xlabel: "N(0,1) quantile", ylabel: "standardised score" });
+  // aggregate: campaign total and max attacker
+  const tot = [], mx = [], mxTh = [];
+  cps.forEach((k, c) => { let s = 0, M = -Infinity; for (const x of rec[c]) { s += x; if (x > M) M = x; } tot.push(s); mx.push(M); mxTh.push(k * mu + Math.sqrt(k * s2) * Math.sqrt(2 * Math.log(m))); });
+  Plot.line($("cagg"), { series: [{ x: cps, y: mx, points: true, connect: true, label: "best attacker: max over m of Sₙ" }, { x: cps, y: mxTh, dash: [5, 4], label: "nμ + σ√n·√(2 ln m)", color: Plot.css("--c2") }, { x: cps, y: cps.map((k) => k * mu), label: "typical attacker nμ", color: Plot.css("--c3") }], xlog: true, xlabel: "n systems", ylabel: "score" });
+  const last = cps.length - 1;
+  $("aggtxt").innerHTML = `<p>With m = ${m} attackers and n = ${SIM.n} systems, the campaign total is Σⱼ Sₙ⁽ʲ⁾ = <b>${tot[last].toFixed(0)}</b> (theory m·n·μ = ${(m * SIM.n * mu).toFixed(0)} ± ${(2 * Math.sqrt(m * SIM.n * s2)).toFixed(0)}). The most successful attacker reached ${mx[last]}, against ${(SIM.n * mu).toFixed(1)} for a typical one. The gap σ√n·√(2 ln m) widens with both n and m.</p>`;
+  const kp = [["μ", mu.toFixed(3)], ["σ²", s2.toFixed(3)], ["n · m", `${SIM.n} · ${m}`], [`P̂(|Sₙ/n − μ| > ${eps}) at n = ${SIM.n}`, lln[last].toFixed(3)], ["KS distance to N(0,1)", ks[last].toFixed(4)], ["var(Sₙ/√n) / σ²", (vN[last] / s2).toFixed(3)]];
+  $("kpis").innerHTML = kp.map(([l, v]) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+}
+// inverse normal CDF (Acklam's rational approximation)
+function invNorm(p) {
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239],
+    b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+    c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783],
+    d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+  const pl = 0.02425;
+  if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > 1 - pl) return -invNorm(1 - p);
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+function bindSeg(id, fn, isOn) {
+  const bs = [...$(id).querySelectorAll("button")];
+  bs.forEach((b) => { if (isOn) b.classList.toggle("on", isOn(b)); b.onclick = () => { bs.forEach((x) => x.classList.toggle("on", x === b)); fn(b); }; });
+}
+bindSeg("trajsel", (b) => { TRAJQ = b.dataset.q; drawTraj(); });
+bindSeg("distq", (b) => { DISTQ = b.dataset.q; drawDist(); });
+bindSeg("ovq", (b) => { OVQ = b.dataset.q; drawOverlay(); });
+function drawAll() { drawTraj(); drawDist(); drawOverlay(); drawStats(); }
+$("go").onclick = simulate;
+window.addEventListener("resize", () => SIM && drawAll());
+labels(); simulate();
+</script>
+</body>
+</html>

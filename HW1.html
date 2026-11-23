@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW1 · Elliptic-curve keys and the Ethereum wallet pipeline</title>
+<style>
+:root{
+  --bg:#0d1321; --panel:#151d2e; --panel2:#1b2540; --line:#2a3656; --fg:#dbe4f3; --muted:#8c9ab6;
+  --acc:#4dd8c8; --acc2:#ffb454; --bad:#ff6b6b; --good:#7ee787;
+  --plot-fg:#c6d0e3; --plot-grid:rgba(140,154,182,.16); --plot-bg:#121a2b;
+  --c1:#4dd8c8; --c2:#ffb454; --c3:#a78bfa; --c4:#ff6b6b; --c5:#7ee787; --c6:#60a5fa;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,Segoe UI,sans-serif}
+header{padding:28px 24px 0;max-width:1180px;margin:auto}
+header h1{margin:0;font-size:26px;letter-spacing:.3px}
+header p{color:var(--muted);margin:6px 0 0}
+.tabs{display:flex;gap:6px;max-width:1180px;margin:22px auto 0;padding:0 24px}
+.tabs button{background:var(--panel);color:var(--muted);border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;padding:10px 18px;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--panel2);color:var(--acc)}
+main{max-width:1180px;margin:auto;padding:0 24px 60px}
+.page{display:none;background:var(--panel2);border:1px solid var(--line);border-radius:0 12px 12px 12px;padding:22px}
+.page.on{display:block}
+section{margin:0 0 30px}
+h2{font-size:19px;margin:0 0 10px;color:var(--acc)}
+h2 small{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+h3{font-size:15px;margin:18px 0 6px;color:var(--acc2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+label{display:inline-flex;flex-direction:column;font-size:12px;color:var(--muted);margin:0 12px 10px 0}
+input,select,textarea{background:#0b1120;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:13px var(--mono)}
+textarea{width:100%;min-height:58px}
+button.act{background:var(--acc);color:#05201d;border:none;border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer;margin:0 6px 6px 0}
+button.ghost{background:transparent;color:var(--acc);border:1px solid var(--acc);border-radius:6px;padding:6px 12px;cursor:pointer;margin:0 6px 6px 0}
+pre,.mono{font-family:var(--mono);font-size:12.5px}
+pre{background:#0b1120;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:340px;margin:6px 0}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}
+th{color:var(--muted);font-weight:600}
+td.mono{word-break:break-all}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700}
+.ok{background:rgba(126,231,135,.15);color:var(--good)} .no{background:rgba(255,107,107,.15);color:var(--bad)}
+.key{color:var(--acc2);font-weight:700}
+canvas{width:100%;height:260px;display:block;border-radius:8px}
+.svgwrap{background:#0b1120;border:1px solid var(--line);border-radius:10px;padding:6px}
+.pipeline{display:flex;flex-direction:column;gap:0}
+.stage{display:grid;grid-template-columns:170px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.stage b{color:var(--acc)} .stage .val{font:12px var(--mono);word-break:break-all;color:var(--fg)}
+.arrow{color:var(--acc2);font-size:12px;padding:4px 0 4px 40px}
+.note{color:var(--muted);font-size:13px}
+.prose p{margin:6px 0 10px} .prose li{margin:3px 0}
+.timeline{position:relative;margin:10px 0 0 10px;border-left:2px solid var(--acc)}
+.timeline div{margin:0 0 10px 0;padding-left:16px;position:relative}
+.timeline div:before{content:"";position:absolute;left:-7px;top:7px;width:12px;height:12px;border-radius:50%;background:var(--acc2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.kv span:nth-child(odd){color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Homework 1 — From a private key to an Ethereum address</h1>
+  <p>Exercise 1: elliptic-curve scalar multiplication on a toy curve · Exercise 2: the wallet pipeline (BIP-39 → BIP-32/44 → secp256k1 → Keccak-256 → EIP-55). Everything runs locally in the browser, with no libraries.</p>
+  <p class="note">Student: <span contenteditable="true">your name</span> · ID <span contenteditable="true">0000000</span></p>
+</header>
+<nav class="tabs"><button class="on" data-p="ex1">Exercise 1 · Toy ECC</button><button data-p="ex2">Exercise 2 · Wallet pipeline</button></nav>
+<main>
+<!-- ======================= EXERCISE 1 ======================= -->
+<div class="page on" id="ex1">
+<section>
+  <h2>1 · Curve, base point and private key <small>y² = x³ + 7 (mod p)</small></h2>
+  <div class="card">
+    <label>prime p <select id="p"><option>17</option><option>23</option><option>29</option><option>97</option><option>211</option><option>1009</option></select></label>
+    <label>base point G <select id="g"></select></label>
+    <label>private key k <input id="k" type="number" value="6" min="1" style="width:110px"></label>
+    <button class="act" id="run1">Compute Q = kG</button>
+    <div class="kv" id="curveinfo"></div>
+  </div>
+</section>
+<section>
+  <h2>2 · Repeated point addition: G, 2G, 3G, …, kG</h2>
+  <div class="grid">
+    <div class="card"><h3>Point-addition rule</h3>
+      <pre>λ = (y₂ − y₁)/(x₂ − x₁)      if P ≠ Q   (chord)
+λ = 3x₁² / (2y₁)            if P = Q   (tangent, a = 0)
+x₃ = λ² − x₁ − x₂   (mod p)
+y₃ = λ(x₁ − x₃) − y₁ (mod p)
+P + (−P) = O  (point at infinity)
+division = multiplication by the inverse mod p (Fermat: a⁻¹ = a^(p−2))</pre>
+      <div id="pubkey" class="mono"></div>
+    </div>
+    <div class="card"><h3>Trace (repeated addition)</h3><pre id="trace"></pre></div>
+  </div>
+  <div class="card" style="margin-top:14px"><h3>Faster: double-and-add (O(log k) operations)</h3><pre id="dbladd"></pre></div>
+</section>
+<section>
+  <h2>3 · Slowed-down visualisation <small>the line through P and G, wrapped mod p, meets the curve in a third point −R</small></h2>
+  <div class="card">
+    <button class="act" id="play">▶ Play</button><button class="ghost" id="stepb">Step</button><button class="ghost" id="resetb">Reset</button>
+    <label style="flex-direction:row;align-items:center;gap:8px">speed <input type="range" id="speed" min="100" max="2000" value="900"></label>
+    <span id="stepinfo" class="mono"></span>
+    <div class="svgwrap"><svg id="svg" viewBox="0 0 640 640" style="width:100%;max-width:640px;display:block;margin:auto"></svg></div>
+  </div>
+</section>
+<section>
+  <h2>4 · Statistical exploration <small>all k = 1 … ord(G) − 1, and all base points</small></h2>
+  <div class="card">
+    <label>scope <select id="scope"><option value="one">selected G only</option><option value="all">every generator of the curve</option></select></label>
+    <button class="act" id="runstats">Run exploration</button>
+    <div class="kv" id="statsum"></div>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card"><canvas id="cx"></canvas></div>
+    <div class="card"><canvas id="cy"></canvas></div>
+    <div class="card"><canvas id="ck"></canvas></div>
+    <div class="card"><canvas id="cbits"></canvas></div>
+    <div class="card"><canvas id="caval"></canvas></div>
+    <div class="card prose"><h3>Reading the numbers</h3><div id="statread" class="note"></div></div>
+  </div>
+</section>
+<section>
+  <h2>5 · The real thing: the same algorithm on secp256k1</h2>
+  <div class="card">
+    <label style="width:100%">private key k (decimal or 0x-hex) <input id="bigk" value="6" style="width:100%"></label>
+    <button class="act" id="runbig">Compute kG on secp256k1</button>
+    <pre id="bigout"></pre>
+  </div>
+</section>
+<section class="prose">
+  <h2>6 · Discussion: one-way function vs. hash function</h2>
+  <div class="card">
+  <p><b>What the toy shows.</b> Scalar multiplication is deterministic and easy in the forward direction: double-and-add needs about log₂k doublings and additions. On the toy curve the inverse problem (recover k from Q) is trivial, because the group has only a handful of elements and a table of all multiples (Section 4) inverts it. On secp256k1 the group has n ≈ 2²⁵⁶ elements, and the best known general algorithms (Pollard's rho, baby-step giant-step) need about √n ≈ 2¹²⁸ group operations. That is the Elliptic Curve Discrete Logarithm Problem (ECDLP).</p>
+  <p><b>Properties that matter for a one-way function:</b> determinism, efficient evaluation, and hardness of inversion. A further requirement is that the outputs carry no usable information about k, and "looking random" is not enough for that. That is why the frequency, bit-balance and correlation tables are only weak heuristics. They can reveal a broken design (strong bias, visible correlation), but passing them never proves one-wayness.</p>
+  <p><b>Properties specific to hash functions:</b> arbitrary-length input with a fixed-length digest, collision resistance, second-preimage resistance and the avalanche effect (one input bit flips about 50% of the output bits). Scalar multiplication is a <i>bijection</i> from {1,…,n−1} onto the non-zero points of the subgroup, so it has no collisions inside that range, but k and k+n always collide, by design. It is also <i>homomorphic</i>: (a+b)G = aG + bG. A hash must never have such algebraic structure, while signatures and key agreement (ECDSA, ECDH) depend on exactly this structure. The avalanche measurement in Section 4 shows "chaotic" bit changes, but they come from modular reduction, not from a designed diffusion layer. Together with the homomorphism, this means ECC outputs should not be used as hash outputs, and hash outputs cannot replace public keys.</p>
+  </div>
+</section>
+</div>
+
+<!-- ======================= EXERCISE 2 ======================= -->
+<div class="page" id="ex2">
+<section>
+  <h2>1 · Run the pipeline <small>Mnemonic → Seed → HD keys → Private key → Public key → Address → Checksum</small></h2>
+  <div class="card">
+    <label style="width:100%">mnemonic (BIP-39) <textarea id="mn">abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about</textarea></label>
+    <label>passphrase ("25th word") <input id="pp" value=""></label>
+    <label>derivation path (BIP-44) <input id="path" value="m/44'/60'/0'/0/0" style="width:200px"></label>
+    <div>
+      <button class="act" id="runpipe">Derive address</button>
+      <button class="ghost" id="gen12">Random 12 words</button><button class="ghost" id="gen24">Random 24 words</button>
+      <button class="ghost" id="vec">Load test vector</button>
+      <span id="mncheck" class="note"></span>
+    </div>
+    <p class="note">⚠ Educational demo: never paste a real wallet's mnemonic into a web page. Random mnemonics use <span class="mono">crypto.getRandomValues</span> and the official English wordlist, which is downloaded when you first need it.</p>
+  </div>
+  <div class="pipeline" id="pipe" style="margin-top:14px"></div>
+</section>
+<section>
+  <h2>2 · Statistical properties of the outputs</h2>
+  <div class="card">
+    <label>number of addresses (path …/0/i) <input id="naddr" type="number" value="40" min="5" max="400" style="width:90px"></label>
+    <button class="act" id="runstat2">Derive &amp; analyse</button>
+    <span id="stat2prog" class="note"></span>
+  </div>
+  <div class="grid" style="margin-top:14px">
+    <div class="card"><canvas id="cnib"></canvas><div id="nibtxt" class="note"></div></div>
+    <div class="card"><canvas id="cbit2"></canvas><div id="bittxt" class="note"></div></div>
+    <div class="card"><canvas id="cav2"></canvas><div id="avtxt" class="note"></div></div>
+    <div class="card"><h3>Derived accounts</h3><div style="max-height:260px;overflow:auto"><table id="addrtab"></table></div></div>
+  </div>
+</section>
+<section>
+  <h2>3 · EIP-55 checksum as a typo detector</h2>
+  <div class="card">
+    <label style="width:100%">address to verify <input id="chk" value="0x9858EfFD232B4033E47d90003D41EC34EcaEda94" style="width:100%"></label>
+    <button class="act" id="runchk">Verify checksum</button><button class="ghost" id="typo">Simulate 10 000 single-character typos</button>
+    <div id="chkout" class="mono"></div>
+  </div>
+</section>
+<section>
+  <h2>4 · Keccak-256 is not SHA3-256 <small>same permutation, different padding byte</small></h2>
+  <div class="card">
+    <label style="width:100%">message <input id="hmsg" value="" placeholder="(empty string)" style="width:100%"></label>
+    <pre id="hout"></pre>
+  </div>
+</section>
+<section class="prose">
+  <h2>5 · Roles of the standards and primitives</h2>
+  <div class="card"><table>
+    <tr><th>Component</th><th>Category</th><th>What it does in the wallet</th></tr>
+    <tr><td><b>BIP-39</b></td><td>encoding + key stretching</td><td>Encodes 128–256 bits of entropy (plus a SHA-256 checksum of ENT/32 bits) as 12–24 words from a 2048-word list. The words are then stretched with PBKDF2-HMAC-SHA512 (2048 iterations, salt "mnemonic"+passphrase) into a 512-bit <i>seed</i>. The words are a human backup format, not the key itself.</td></tr>
+    <tr><td><b>BIP-32</b></td><td>key derivation</td><td>HMAC-SHA512("Bitcoin seed", seed) gives the master private key and chain code. CKD functions derive a tree of child keys. Hardened children (index ≥ 2³¹) use the parent private key, so a leaked child key plus the extended public key cannot climb the tree.</td></tr>
+    <tr><td><b>BIP-44</b></td><td>convention</td><td>Fixes the meaning of tree levels: m / purpose' / coin_type' / account' / change / index. For Ethereum this is m/44'/60'/0'/0/i, which lets different wallets find the same accounts.</td></tr>
+    <tr><td><b>secp256k1</b></td><td>public-key cryptography</td><td>Q = kG maps the 256-bit private scalar to a public point (Exercise 1, on a real curve). It also provides ECDSA signatures, which prove ownership without revealing k.</td></tr>
+    <tr><td><b>Keccak-256</b></td><td>hashing</td><td>Hashes the 64-byte uncompressed public key. The last 20 bytes are the address. This shortens the identifier, and because only a hash is published until the first transaction, it hides the public key behind a one-way function.</td></tr>
+    <tr><td><b>EIP-55</b></td><td>checksum (in the encoding)</td><td>Uses upper/lower case of the hex letters to carry bits of Keccak-256(lowercase address). Backward compatible (case-insensitive parsers still work) and detects almost all typos.</td></tr>
+  </table>
+  <h3>Five notions that must not be confused</h3>
+  <ul>
+    <li><b>Key generation</b> creates fresh secret randomness: the entropy behind the mnemonic. It is the only step that needs a good random source.</li>
+    <li><b>Key derivation</b> deterministically turns one secret into others (PBKDF2, BIP-32 CKD). There is no new randomness, and the same input always gives the same keys. That is why a single backup restores every account.</li>
+    <li><b>Public-key cryptography</b> is an asymmetric relation (k secret, Q = kG public) with a trapdoor-free hard inverse. It enables signatures.</li>
+    <li><b>Hashing</b> is a keyless, fixed-length, one-way, collision-resistant compression (Keccak-256, SHA-256, SHA-512 inside HMAC/PBKDF2).</li>
+    <li><b>Checksums</b> detect accidental errors and are not security (the BIP-39 checksum bits, EIP-55 capitalisation). <b>Encoding</b> is a reversible change of representation with no secrecy (words ↔ bits, hex, mixed case).</li>
+  </ul>
+  <h3>How they fit together</h3>
+  <p>Each step solves a different problem. Usability: words humans can write down. Brute-force cost and passphrase support: PBKDF2. Many accounts from one backup: BIP-32/44. Ownership proofs: secp256k1/ECDSA. Short, uniform identifiers: Keccak. Typo safety: EIP-55. No single primitive provides all of these, and reusing one primitive for several jobs (for example a hash as a signature) would break the security arguments of each.</p>
+  <h3>Statistical properties</h3>
+  <p>Section 2 measures what the security model predicts. Seed bits, private keys and address nibbles are indistinguishable from uniform (χ² tests do not reject uniformity, about 50% ones per bit position). A one-character change in the passphrase flips about half of the seed and address bits (avalanche, inherited from HMAC-SHA512 and Keccak). EIP-55 capitalises each hex letter with probability ½, because the capitalisation is a hash bit. The mnemonic words themselves are <i>not</i> uniform text: they are a fixed dictionary, and the last word carries checksum bits.</p>
+  <h3>Temporal and historical context</h3>
+  <div class="timeline">
+    <div><b>1977 — RSA</b>: the first practical public-key system, based on integer factorisation. ECC (Koblitz, Miller, 1985) later gave the same security with far shorter keys.</div>
+    <div><b>2001 — SHA-2 (SHA-256/SHA-512)</b>: NIST's Merkle–Damgård hash family, used here inside HMAC-SHA512 and PBKDF2 (BIP-39/32) and for the BIP-39 checksum.</div>
+    <div><b>2008–2012 — Keccak</b> wins the SHA-3 competition (announced Oct 2012). <b>2012 — BIP-32</b> HD wallets.</div>
+    <div><b>2013 — BIP-39</b> mnemonics. <b>2014 — BIP-44</b> multi-account paths. Ethereum's design (2014) adopted Keccak-256 <i>before</i> the SHA-3 standard was final.</div>
+    <div><b>2015 — FIPS 202 (SHA-3)</b> standardises Keccak with a different domain-separation padding (0x06 instead of 0x01), so SHA3-256 ≠ Keccak-256 (Section 4). <b>2016 — EIP-55</b> checksummed addresses.</div>
+  </div>
+  <h3>SHA-2 vs Keccak / SHA-3</h3>
+  <p>SHA-2 is a Merkle–Damgård construction over a Davies–Meyer compression function. It is vulnerable to length extension, which is why HMAC is used for keyed hashing. Keccak is a <i>sponge</i> over the 1600-bit permutation Keccak-f, with rate 1088 / capacity 512 for the 256-bit variant. It resists length extension and gives SHA-3 a design independent of SHA-2. Ethereum's "SHA3" opcode is in fact Keccak-256 with the original padding.</p>
+  </div>
+</section>
+</div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+// ---------------------------------------------------------------------------
+// crypto_core.js — small, dependency-free primitives used by HW1 and HW2.
+// Educational code: BigInt arithmetic, no constant-time guarantees.
+// ---------------------------------------------------------------------------
+
+// ---------- byte helpers ----------
+const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
+const unhex = (h) => {
+  h = h.replace(/^0x/, "");
+  if (h.length % 2) h = "0" + h;
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(2 * i, 2), 16);
+  return out;
+};
+const utf8 = (s) => new TextEncoder().encode(s);
+const concatBytes = (...arrs) => {
+  const out = new Uint8Array(arrs.reduce((a, x) => a + x.length, 0));
+  let o = 0;
+  for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+};
+const bigToBytes = (v, len = 32) => unhex(v.toString(16).padStart(len * 2, "0"));
+const bytesToBig = (u8) => BigInt("0x" + (hex(u8) || "0"));
+const ser32 = (i) => new Uint8Array([(i >>> 24) & 255, (i >>> 16) & 255, (i >>> 8) & 255, i & 255]);
+
+// ---------- Keccak-256 (original Keccak padding 0x01, as used by Ethereum) ----------
+const Keccak = (() => {
+  const M64 = (1n << 64n) - 1n;
+  // round constants generated by the LFSR of the Keccak reference (no hand-typed tables)
+  const rcBit = (t) => {
+    if (t % 255 === 0) return 1;
+    let R = 1;
+    for (let i = 1; i <= t % 255; i++) {
+      R <<= 1;
+      if (R & 0x100) R ^= 0x171;
+    }
+    return R & 1;
+  };
+  const RC = [];
+  for (let ir = 0; ir < 24; ir++) {
+    let c = 0n;
+    for (let j = 0; j <= 6; j++) if (rcBit(j + 7 * ir)) c |= 1n << BigInt((1 << j) - 1);
+    RC.push(c);
+  }
+  // rotation offsets r[x][y] generated by the (x,y) -> (y, 2x+3y) walk
+  const ROT = Array.from({ length: 25 }, () => 0n);
+  {
+    let x = 1, y = 0;
+    for (let t = 0; t < 24; t++) {
+      ROT[x + 5 * y] = BigInt((((t + 1) * (t + 2)) / 2) % 64);
+      [x, y] = [y, (2 * x + 3 * y) % 5];
+    }
+  }
+  const rotl = (v, n) => (n === 0n ? v : ((v << n) | (v >> (64n - n))) & M64);
+  function f(A) {
+    const C = new Array(5), B = new Array(25);
+    for (let round = 0; round < 24; round++) {
+      for (let x = 0; x < 5; x++) C[x] = A[x] ^ A[x + 5] ^ A[x + 10] ^ A[x + 15] ^ A[x + 20];
+      for (let x = 0; x < 5; x++) {
+        const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
+        for (let y = 0; y < 5; y++) A[x + 5 * y] ^= D;
+      }
+      for (let x = 0; x < 5; x++)
+        for (let y = 0; y < 5; y++) B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl(A[x + 5 * y], ROT[x + 5 * y]);
+      for (let x = 0; x < 5; x++)
+        for (let y = 0; y < 5; y++)
+          A[x + 5 * y] = B[x + 5 * y] ^ (~B[((x + 1) % 5) + 5 * y] & M64 & B[((x + 2) % 5) + 5 * y]);
+      A[0] ^= RC[round];
+    }
+  }
+  function keccak256(msg, pad = 0x01) {
+    const rate = 136;
+    const padLen = rate - (msg.length % rate);
+    const P = new Uint8Array(msg.length + padLen);
+    P.set(msg);
+    P[msg.length] ^= pad; // 0x01 = original Keccak (Ethereum); 0x06 = FIPS-202 SHA3-256
+    P[P.length - 1] ^= 0x80;
+    const A = Array.from({ length: 25 }, () => 0n);
+    for (let off = 0; off < P.length; off += rate) {
+      for (let i = 0; i < rate / 8; i++) {
+        let lane = 0n;
+        for (let b = 7; b >= 0; b--) lane = (lane << 8n) | BigInt(P[off + 8 * i + b]);
+        A[i] ^= lane;
+      }
+      f(A);
+    }
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 4; i++) {
+      let lane = A[i];
+      for (let b = 0; b < 8; b++) { out[8 * i + b] = Number(lane & 255n); lane >>= 8n; }
+    }
+    return out;
+  }
+  return { keccak256, sha3_256: (m) => keccak256(m, 0x06) };
+})();
+
+// ---------- secp256k1 ----------
+const EC = (() => {
+  const P = 2n ** 256n - 2n ** 32n - 977n;
+  const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+  const G = {
+    x: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n,
+    y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n,
+  };
+  const mod = (a, m = P) => { const r = a % m; return r >= 0n ? r : r + m; };
+  const inv = (a, m = P) => {
+    let [lm, hm, low, high] = [1n, 0n, mod(a, m), m];
+    while (low > 1n) {
+      const r = high / low;
+      [lm, hm, low, high] = [hm - lm * r, lm, high - low * r, low];
+    }
+    return mod(lm, m);
+  };
+  // Jacobian coordinates (X, Y, Z) with x = X/Z^2, y = Y/Z^3; Z = 0 is the point at infinity
+  const INF = { X: 1n, Y: 1n, Z: 0n };
+  const toJ = (p) => (p ? { X: p.x, Y: p.y, Z: 1n } : INF);
+  const fromJ = (J) => {
+    if (J.Z === 0n) return null;
+    const zi = inv(J.Z), zi2 = mod(zi * zi);
+    return { x: mod(J.X * zi2), y: mod(J.Y * zi2 * zi) };
+  };
+  function dbl(J) {
+    if (J.Z === 0n || J.Y === 0n) return INF;
+    const A = mod(J.X * J.X), B = mod(J.Y * J.Y), C = mod(B * B);
+    const D = mod(2n * (mod((J.X + B) ** 2n) - A - C));
+    const E = mod(3n * A), F = mod(E * E);
+    const X3 = mod(F - 2n * D);
+    return { X: X3, Y: mod(E * (D - X3) - 8n * C), Z: mod(2n * J.Y * J.Z) };
+  }
+  // mixed addition: Jacobian J + affine q
+  function addMixed(J, q) {
+    if (!q) return J;
+    if (J.Z === 0n) return toJ(q);
+    const Z1Z1 = mod(J.Z * J.Z);
+    const U2 = mod(q.x * Z1Z1), S2 = mod(q.y * J.Z * Z1Z1);
+    const H = mod(U2 - J.X), r = mod(S2 - J.Y);
+    if (H === 0n) return r === 0n ? dbl(J) : INF;
+    const HH = mod(H * H), HHH = mod(H * HH), V = mod(J.X * HH);
+    const X3 = mod(r * r - HHH - 2n * V);
+    return { X: X3, Y: mod(r * (V - X3) - J.Y * HHH), Z: mod(J.Z * H) };
+  }
+  function mul(k, p = G) {
+    k = mod(k, N);
+    let R = INF;
+    for (let i = BigInt(k.toString(2).length) - 1n; i >= 0n; i--) {
+      R = dbl(R);
+      if ((k >> i) & 1n) R = addMixed(R, p);
+    }
+    return fromJ(R);
+  }
+  const add = (a, b) => fromJ(addMixed(toJ(a), b));
+  const neg = (a) => (a ? { x: a.x, y: mod(-a.y) } : null);
+  const eq = (a, b) => (a === null || b === null ? a === b : a.x === b.x && a.y === b.y);
+  // equality of a Jacobian point with an affine point without inversion
+  const eqJA = (J, q) => {
+    if (J.Z === 0n) return q === null;
+    const z2 = mod(J.Z * J.Z);
+    return mod(q.x * z2) === J.X && mod(q.y * z2 * J.Z) === J.Y;
+  };
+  const onCurve = (p) => mod(p.y * p.y - p.x ** 3n - 7n) === 0n;
+  const compress = (p) => concatBytes(new Uint8Array([p.y & 1n ? 3 : 2]), bigToBytes(p.x));
+  const uncompressed = (p) => concatBytes(bigToBytes(p.x), bigToBytes(p.y)); // 64 bytes, no 0x04 prefix
+  return { P, N, G, mod, inv, mul, add, neg, eq, eqJA, onCurve, compress, uncompressed, toJ, fromJ, addMixed, dbl, INF };
+})();
+
+// ---------- WebCrypto wrappers ----------
+const subtle = globalThis.crypto.subtle;
+async function hmacSha512(key, data) {
+  const k = await subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  return new Uint8Array(await subtle.sign("HMAC", k, data));
+}
+async function sha256(data) { return new Uint8Array(await subtle.digest("SHA-256", data)); }
+async function sha512(data) { return new Uint8Array(await subtle.digest("SHA-512", data)); }
+async function pbkdf2Sha512(password, salt, iterations, bytes) {
+  const k = await subtle.importKey("raw", password, "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await subtle.deriveBits({ name: "PBKDF2", hash: "SHA-512", salt, iterations }, k, bytes * 8));
+}
+
+// ---------- BIP-39 / BIP-32 / BIP-44 / Ethereum address / EIP-55 ----------
+const Wallet = {
+  // BIP-39: seed = PBKDF2-HMAC-SHA512(NFKD(mnemonic), "mnemonic" + NFKD(passphrase), 2048, 64 bytes)
+  async mnemonicToSeed(mnemonic, passphrase = "") {
+    const m = mnemonic.normalize("NFKD").trim().split(/\s+/).join(" ");
+    return pbkdf2Sha512(utf8(m), utf8(("mnemonic" + passphrase).normalize("NFKD")), 2048, 64);
+  },
+  // BIP-32 master key: HMAC-SHA512(key = "Bitcoin seed", seed)
+  async masterKey(seed) {
+    const I = await hmacSha512(utf8("Bitcoin seed"), seed);
+    return { k: bytesToBig(I.slice(0, 32)), c: I.slice(32), path: "m" };
+  },
+  // BIP-32 private child key derivation CKDpriv
+  async ckdPriv(node, index) {
+    const hardened = index >= 0x80000000;
+    const data = hardened
+      ? concatBytes(new Uint8Array([0]), bigToBytes(node.k), ser32(index))
+      : concatBytes(EC.compress(EC.mul(node.k)), ser32(index));
+    const I = await hmacSha512(node.c, data);
+    const IL = bytesToBig(I.slice(0, 32));
+    const k = EC.mod(IL + node.k, EC.N);
+    const label = hardened ? index - 0x80000000 + "'" : String(index);
+    return { k, c: I.slice(32), path: node.path + "/" + label };
+  },
+  parsePath(path) {
+    return path.replace(/^m\/?/, "").split("/").filter(Boolean).map((s) => {
+      const h = /['hH]$/.test(s);
+      const v = parseInt(s, 10);
+      if (!Number.isInteger(v) || v < 0 || v >= 0x80000000) throw new Error("bad path segment " + s);
+      return h ? v + 0x80000000 : v;
+    });
+  },
+  async derive(seed, path) {
+    let node = await this.masterKey(seed);
+    const trace = [node];
+    for (const i of this.parsePath(path)) { node = await this.ckdPriv(node, i); trace.push(node); }
+    return { node, trace };
+  },
+  // address = last 20 bytes of Keccak-256(uncompressed public key without 0x04)
+  addressFromPriv(k) {
+    const pub = EC.mul(k);
+    const h = Keccak.keccak256(EC.uncompressed(pub));
+    return { pub, hash: h, address: hex(h.slice(12)) };
+  },
+  // EIP-55: uppercase hex letter i when nibble i of Keccak-256(lowercase address) >= 8
+  checksum(addrLower) {
+    const a = addrLower.toLowerCase().replace(/^0x/, "");
+    const h = hex(Keccak.keccak256(utf8(a)));
+    let out = "0x";
+    for (let i = 0; i < 40; i++) out += parseInt(h[i], 16) >= 8 ? a[i].toUpperCase() : a[i];
+    return out;
+  },
+  isValidChecksum(addr) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) return false;
+    return this.checksum(addr.slice(2).toLowerCase()) === addr;
+  },
+};
+
+// ---------- BIP-39 mnemonic generation / checksum (needs the 2048-word list) ----------
+const Bip39 = {
+  async entropyToMnemonic(entropy, words) {
+    const h = await sha256(entropy);
+    const bits = Array.from(entropy, (b) => b.toString(2).padStart(8, "0")).join("") +
+      h[0].toString(2).padStart(8, "0").slice(0, entropy.length / 4);
+    const out = [];
+    for (let i = 0; i < bits.length; i += 11) out.push(words[parseInt(bits.slice(i, i + 11), 2)]);
+    return out.join(" ");
+  },
+  async checkMnemonic(mnemonic, words) {
+    const ws = mnemonic.trim().split(/\s+/);
+    if (![12, 15, 18, 21, 24].includes(ws.length)) return { ok: false, why: "word count must be 12/15/18/21/24" };
+    const idx = ws.map((w) => words.indexOf(w));
+    if (idx.includes(-1)) return { ok: false, why: "unknown word: " + ws[idx.indexOf(-1)] };
+    const bits = idx.map((i) => i.toString(2).padStart(11, "0")).join("");
+    const cs = ws.length / 3, entBits = bits.length - cs;
+    const ent = new Uint8Array(entBits / 8);
+    for (let i = 0; i < ent.length; i++) ent[i] = parseInt(bits.slice(8 * i, 8 * i + 8), 2);
+    const h = await sha256(ent);
+    const ok = h[0].toString(2).padStart(8, "0").slice(0, cs) === bits.slice(entBits);
+    return { ok, why: ok ? "checksum valid" : "checksum bits do not match" };
+  },
+};
+
+if (typeof module !== "undefined") module.exports = { hex, unhex, utf8, concatBytes, bigToBytes, bytesToBig, Keccak, EC, Wallet, Bip39, sha256, sha512, hmacSha512 };
+
+</script>
+<script>
+// ---------------- tabs ----------------
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".page").forEach((pg) => pg.classList.toggle("on", pg.id === b.dataset.p));
+  if (b.dataset.p === "ex1") runStats(); else if (!window._ex2) { window._ex2 = 1; runPipe(); hashDemo(); }
+});
+const $ = (id) => document.getElementById(id);
+
+// ===================== EXERCISE 1: toy curve =====================
+const Toy = {
+  p: 17,
+  mod(a) { const p = this.p; return ((a % p) + p) % p; },
+  inv(a) { // Fermat: a^(p-2)
+    let r = 1, b = this.mod(a), e = this.p - 2;
+    while (e > 0) { if (e & 1) r = (r * b) % this.p; b = (b * b) % this.p; e >>= 1; }
+    return r;
+  },
+  onCurve(P) { return P === null || this.mod(P.y * P.y - P.x ** 3 - 7) === 0; },
+  // returns {R, lambda, kind}
+  add(P, Q) {
+    if (P === null) return { R: Q, kind: "O + Q = Q" };
+    if (Q === null) return { R: P, kind: "P + O = P" };
+    if (P.x === Q.x && this.mod(P.y + Q.y) === 0) return { R: null, kind: "P + (−P) = O" };
+    let lam, kind;
+    if (P.x === Q.x && P.y === Q.y) { lam = this.mod(3 * P.x * P.x * this.inv(2 * P.y)); kind = "doubling"; }
+    else { lam = this.mod((Q.y - P.y) * this.inv(Q.x - P.x)); kind = "chord"; }
+    const x3 = this.mod(lam * lam - P.x - Q.x);
+    const y3 = this.mod(lam * (P.x - x3) - P.y);
+    return { R: { x: x3, y: y3 }, lambda: lam, kind };
+  },
+  points() {
+    const out = [];
+    for (let x = 0; x < this.p; x++) { const r = this.mod(x ** 3 + 7); for (let y = 0; y < this.p; y++) if ((y * y) % this.p === r) out.push({ x, y }); }
+    return out;
+  },
+  order(G) { let P = G, n = 1; while (P !== null) { P = this.add(P, G).R; n++; if (n > 4 * this.p) break; } return n; },
+  mul(k, G) { // double-and-add, returns trace
+    const bits = k.toString(2); let R = null; const tr = [];
+    for (const b of bits) {
+      R = this.add(R, R).R; tr.push(["double", R]);
+      if (b === "1") { R = this.add(R, G).R; tr.push(["add G", R]); }
+    }
+    return { R, tr, bits };
+  },
+};
+const ps = (P) => (P === null ? "O" : `(${P.x}, ${P.y})`);
+const eqP = (a, b) => (a === null || b === null ? a === b : a.x === b.x && a.y === b.y);
+
+function setupCurve() {
+  Toy.p = +$("p").value;
+  const pts = Toy.points();
+  const sel = $("g"); const prev = sel.value; sel.innerHTML = "";
+  for (const P of pts) { const o = document.createElement("option"); o.value = P.x + "," + P.y; o.textContent = `${ps(P)} · order ${Toy.order(P)}`; sel.appendChild(o); }
+  if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  else if (Toy.p === 17) sel.value = "1,5";
+  else { // pick a point of maximal order
+    let best = 0; pts.forEach((P, i) => { if (Toy.order(P) > Toy.order(pts[best])) best = i; }); sel.selectedIndex = best;
+  }
+  const h = pts.length + 1;
+  $("curveinfo").innerHTML = `<span>curve</span><span>y² = x³ + 7 over 𝔽<sub>${Toy.p}</sub></span><span>#E (incl. O)</span><span>${h}</span>`;
+}
+const getG = () => { const [x, y] = $("g").value.split(",").map(Number); return { x, y }; };
+
+function runEx1() {
+  const G = getG(), k = Math.max(1, Math.floor(+$("k").value || 1));
+  const n = Toy.order(G);
+  let lines = [], P = G;
+  lines.push(`1G = ${ps(G)}`);
+  for (let i = 2; i <= Math.min(k, 400); i++) {
+    const { R, lambda, kind } = Toy.add(P, G);
+    lines.push(`${i}G = ${ps(P)} + G  [${kind}${lambda !== undefined ? ", λ=" + lambda : ""}] = ${ps(R)}`);
+    P = R;
+  }
+  if (k > 400) lines.push(`… (only the first 400 steps are printed; use double-and-add below)`);
+  $("trace").textContent = lines.join("\n");
+  const m = Toy.mul(k, G);
+  $("dbladd").textContent = `k = ${k} = ${m.bits}₂ → ${m.tr.length} group operations instead of ${k - 1}\n` +
+    m.tr.map(([op, R], i) => `${String(i + 1).padStart(2)}. ${op.padEnd(7)} → ${ps(R)}`).join("\n");
+  const Q = m.R;
+  $("pubkey").innerHTML = `ord(G) = n = ${n} &nbsp;·&nbsp; k mod n = ${k % n}<br><span class="key">TOY PUBLIC KEY  Q = ${k}G = ${ps(Q)}</span> ${Toy.onCurve(Q) ? '<span class="badge ok">on curve</span>' : '<span class="badge no">not on curve!</span>'}`;
+  resetAnim();
+}
+
+// ---------------- SVG animation ----------------
+let anim = { i: 1, P: null, timer: null };
+function drawGrid(highlight) {
+  const svg = $("svg"), p = Toy.p, S = 640, pad = 34, cell = (S - 2 * pad) / (p - 1 || 1);
+  const X = (x) => pad + x * cell, Y = (y) => S - pad - y * cell;
+  const pts = Toy.points();
+  let s = `<rect x="0" y="0" width="${S}" height="${S}" fill="#0b1120"/>`;
+  const step = p <= 29 ? 1 : p <= 97 ? 8 : 50;
+  for (let v = 0; v < p; v += step) s += `<line x1="${X(v)}" y1="${Y(0)}" x2="${X(v)}" y2="${Y(p - 1)}" stroke="#1d2943"/><line x1="${X(0)}" y1="${Y(v)}" x2="${X(p - 1)}" y2="${Y(v)}" stroke="#1d2943"/>` +
+    `<text x="${X(v)}" y="${S - 12}" fill="#5d6b88" font-size="10" text-anchor="middle">${v}</text><text x="12" y="${Y(v) + 3}" fill="#5d6b88" font-size="10">${v}</text>`;
+  if (highlight && highlight.line) for (const q of highlight.line) s += `<circle cx="${X(q.x)}" cy="${Y(q.y)}" r="${p > 97 ? 1 : 2.2}" fill="#ffb454" opacity=".55"/>`;
+  const rad = p <= 29 ? 7 : p <= 97 ? 3.5 : 1.4;
+  for (const q of pts) s += `<circle cx="${X(q.x)}" cy="${Y(q.y)}" r="${rad}" fill="#2f4a6e"/>`;
+  if (highlight) {
+    (highlight.visited || []).forEach((q, i, arr) => {
+      if (q === null) return;
+      s += `<circle cx="${X(q.x)}" cy="${Y(q.y)}" r="${rad + 1}" fill="#4dd8c8" opacity="${0.35 + 0.65 * (i + 1) / arr.length}"/>`;
+      if (p <= 29) s += `<text x="${X(q.x) + 9}" y="${Y(q.y) - 8}" fill="#4dd8c8" font-size="12">${i + 1}G</text>`;
+    });
+    const mark = (q, c, lbl) => { if (!q) return; s += `<circle cx="${X(q.x)}" cy="${Y(q.y)}" r="${rad + 5}" fill="none" stroke="${c}" stroke-width="2.5"/>`; if (lbl) s += `<text x="${X(q.x) - 10}" y="${Y(q.y) + 22}" fill="${c}" font-size="12" font-weight="700">${lbl}</text>`; };
+    mark(highlight.P, "#a78bfa", "P"); mark(highlight.G, "#ffb454", "G"); mark(highlight.third, "#ff6b6b", "−R"); mark(highlight.R, "#7ee787", "R");
+    if (highlight.third && highlight.R) s += `<line x1="${X(highlight.third.x)}" y1="${Y(highlight.third.y)}" x2="${X(highlight.R.x)}" y2="${Y(highlight.R.y)}" stroke="#ff6b6b" stroke-dasharray="4 4"/>`;
+  }
+  svg.innerHTML = s;
+}
+function resetAnim() { clearInterval(anim.timer); anim = { i: 1, P: getG(), visited: [getG()], timer: null }; $("play").textContent = "▶ Play"; drawGrid({ visited: anim.visited, G: getG() }); $("stepinfo").textContent = "1G = " + ps(getG()); }
+function stepAnim() {
+  const G = getG(), k = Math.max(1, +$("k").value | 0);
+  if (anim.i >= k || anim.P === null) { clearInterval(anim.timer); $("play").textContent = "▶ Play"; return; }
+  const P = anim.P, res = Toy.add(P, G);
+  let line = [], third = null;
+  if (res.lambda !== undefined) {
+    const c = Toy.mod(P.y - res.lambda * P.x);
+    for (let x = 0; x < Toy.p; x++) line.push({ x, y: Toy.mod(res.lambda * x + c) });
+    third = res.R ? { x: res.R.x, y: Toy.mod(-res.R.y) } : null;
+  }
+  anim.i++; anim.P = res.R; anim.visited.push(res.R);
+  drawGrid({ visited: anim.visited, P, G, R: res.R, third, line });
+  $("stepinfo").textContent = `${anim.i}G = ${ps(P)} + ${ps(G)} · ${res.kind}${res.lambda !== undefined ? ` · λ = ${res.lambda}, line y = ${res.lambda}x + ${Toy.mod(P.y - res.lambda * P.x)} (mod ${Toy.p})` : ""} → ${ps(res.R)}`;
+}
+$("play").onclick = () => {
+  if (anim.timer) { clearInterval(anim.timer); anim.timer = null; $("play").textContent = "▶ Play"; return; }
+  if (anim.i >= (+$("k").value | 0)) resetAnim();
+  $("play").textContent = "❚❚ Pause";
+  anim.timer = setInterval(stepAnim, 2100 - +$("speed").value);
+};
+$("stepb").onclick = stepAnim; $("resetb").onclick = resetAnim;
+
+// ---------------- statistics ----------------
+const popcount = (v) => { let c = 0; while (v) { c += v & 1; v >>>= 1; } return c; };
+function pearson(a, b) {
+  const n = a.length, ma = a.reduce((s, v) => s + v, 0) / n, mb = b.reduce((s, v) => s + v, 0) / n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+  return sab / Math.sqrt(saa * sbb);
+}
+async function shaAvalanche(trials = 400) {
+  let tot = 0;
+  for (let t = 0; t < trials; t++) {
+    const v = (t * 2654435761) >>> 0, j = t % 32;
+    const a = await sha256(new Uint8Array([v >>> 24, (v >>> 16) & 255, (v >>> 8) & 255, v & 255]));
+    const w = (v ^ (1 << j)) >>> 0;
+    const b = await sha256(new Uint8Array([w >>> 24, (w >>> 16) & 255, (w >>> 8) & 255, w & 255]));
+    let d = 0; for (let i = 0; i < 32; i++) d += popcount(a[i] ^ b[i]);
+    tot += d / 256;
+  }
+  return tot / trials;
+}
+async function runStats() {
+  const p = Toy.p, w = Math.ceil(Math.log2(p));
+  const gens = $("scope").value === "all"
+    ? Toy.points().filter((P) => Toy.order(P) === Toy.points().length + 1)
+    : [getG()];
+  const useGens = gens.length ? gens : [getG()];
+  const xs = [], ys = [], ks = [], bitOnes = new Array(2 * w).fill(0); let aval = [], nOut = 0;
+  for (const G of useGens) {
+    const n = Toy.order(G);
+    const table = [null];
+    let P = null; for (let k = 1; k < n; k++) { P = Toy.add(P, G).R; table.push(P); }
+    for (let k = 1; k < n; k++) {
+      const Q = table[k]; xs.push(Q.x); ys.push(Q.y); ks.push(k); nOut++;
+      for (let b = 0; b < w; b++) { bitOnes[b] += (Q.x >> b) & 1; bitOnes[w + b] += (Q.y >> b) & 1; }
+      for (let j = 0; (1 << j) < n; j++) {
+        const k2 = k ^ (1 << j); if (k2 < 1 || k2 >= n) continue;
+        const R = table[k2];
+        aval.push((popcount(Q.x ^ R.x) + popcount(Q.y ^ R.y)) / (2 * w));
+      }
+    }
+  }
+  const freq = (arr) => { const c = new Array(p).fill(0); arr.forEach((v) => c[v]++); return c; };
+  const lbl = Array.from({ length: p }, (_, i) => String(i));
+  Plot.bars($("cx"), { labels: lbl, groups: [{ values: freq(xs), label: "count of x" }], title: "Distribution of x-coordinates of kG", xlabel: "x" });
+  Plot.bars($("cy"), { labels: lbl, groups: [{ values: freq(ys), label: "count of y", color: Plot.css("--c2") }], title: "Distribution of y-coordinates of kG", xlabel: "y" });
+  const showN = Math.min(ks.length, 1500);
+  Plot.line($("ck"), { series: [{ x: ks.slice(0, showN), y: xs.slice(0, showN), points: true, r: 2.4, label: "x of kG" }, { x: ks.slice(0, showN), y: ys.slice(0, showN), points: true, r: 2.4, label: "y of kG" }], title: "Input k vs output coordinates", xlabel: "k", ylabel: "coordinate" });
+  Plot.bars($("cbits"), { labels: [...Array.from({ length: w }, (_, b) => "x" + b), ...Array.from({ length: w }, (_, b) => "y" + b)], groups: [{ values: bitOnes.map((v) => v / nOut), label: "fraction of 1s" }], hlines: [{ y: 0.5 }], ymax: 1, title: "Bit balance per position (ideal 0.5)" });
+  const shaAv = await shaAvalanche();
+  Plot.hist($("caval"), { sets: [{ data: aval, label: "toy ECC: share of output bits flipped" }], bins: 2 * w, xr: [0, 1], title: "Avalanche: flip one bit of k", xlabel: "fraction of the 2⌈log₂p⌉ output bits that change" });
+  const mean = aval.reduce((a, b) => a + b, 0) / aval.length;
+  // chi-square uniformity of x over the values actually reachable
+  const fx = freq(xs).filter((v) => v > 0), ex = xs.length / fx.length;
+  const chi = fx.reduce((s, o) => s + (o - ex) ** 2 / ex, 0);
+  const uniqueQ = new Set(xs.map((x, i) => x + "," + ys[i])).size;
+  $("statsum").innerHTML = `<span>base points used</span><span>${useGens.length}</span><span>outputs</span><span>${nOut} (distinct points: ${uniqueQ})</span>
+    <span>corr(k, x) · corr(k, y)</span><span>${pearson(ks, xs).toFixed(3)} · ${pearson(ks, ys).toFixed(3)}</span>
+    <span>mean avalanche toy ECC</span><span>${(100 * mean).toFixed(1)} %</span><span>mean avalanche SHA-256 (same test)</span><span>${(100 * shaAv).toFixed(1)} %</span>
+    <span>χ² of x over reachable values</span><span>${chi.toFixed(2)} on ${fx.length - 1} d.f.</span>`;
+  $("statread").innerHTML = `
+   <p>• Each non-zero x that occurs appears <b>exactly twice</b> for a fixed generator, as (x, y) and (x, −y). This is the symmetry P ↔ −P (k ↔ n−k), not randomness.${Toy.points().some((q) => q.x === 0) ? "" : ` x = 0 never occurs because 7 is not a square mod ${p}.`}</p>
+   <p>• The bit balance is skewed for the top bit, because p is not a power of two (values ≥ 2^${w - 1} are rarer). A biased bit leaks nothing about k here, which is why "uniform bits" are a hash-style requirement, not a one-way requirement.</p>
+   <p>• |corr(k, x)| is close to 0. Linear correlation is the wrong lens, though: the outputs are perfectly structured by the group law ((a+b)G = aG + bG).</p>
+   <p>• Flipping one bit of k changes about ${(100 * mean).toFixed(0)}% of the output bits, against ${(100 * shaAv).toFixed(0)}% for SHA-256. The values look chaotic, but with only ${uniqueQ} possible outputs a lookup table inverts the map instantly. That is the whole difference from secp256k1.</p>`;
+}
+
+$("p").onchange = () => { setupCurve(); runEx1(); runStats(); };
+$("g").onchange = () => { runEx1(); runStats(); };
+$("k").onchange = runEx1; $("run1").onclick = runEx1; $("runstats").onclick = runStats; $("scope").onchange = runStats;
+$("runbig").onclick = () => {
+  const s = $("bigk").value.trim(); let k;
+  try { k = BigInt(s); } catch { $("bigout").textContent = "not an integer"; return; }
+  if (k <= 0n) { $("bigout").textContent = "k must be positive"; return; }
+  const t0 = performance.now(); const Q = EC.mul(k); const t1 = performance.now();
+  const bits = (EC.mod(k, EC.N)).toString(2).length;
+  $("bigout").textContent = `p  = 2^256 − 2^32 − 977\nn  = ${EC.N.toString(16)}\nG  = (${EC.G.x.toString(16)},\n      ${EC.G.y.toString(16)})\n\nk  = ${k} (${bits} bits)\nQ = kG:\n x = ${Q ? Q.x.toString(16).padStart(64, "0") : "O"}\n y = ${Q ? Q.y.toString(16).padStart(64, "0") : ""}\non curve: ${Q ? EC.onCurve(Q) : "-"} · ${(t1 - t0).toFixed(1)} ms with double-and-add (${bits} doublings)\n\nBrute-forcing k from Q would need up to n ≈ 1.16·10^77 additions; Pollard rho ≈ 2^128.`;
+};
+
+// ===================== EXERCISE 2: wallet =====================
+let WORDS = null;
+async function words() {
+  if (WORDS) return WORDS;
+  const r = await fetch("https://cdn.jsdelivr.net/npm/bip39@3.1.0/src/wordlists/english.json");
+  WORDS = await r.json(); return WORDS;
+}
+async function genMnemonic(nWords) {
+  try {
+    const ent = crypto.getRandomValues(new Uint8Array((nWords * 11 - nWords / 3) / 8));
+    $("mn").value = await Bip39.entropyToMnemonic(ent, await words());
+    runPipe();
+  } catch (e) { $("mncheck").textContent = "Could not load the BIP-39 wordlist (offline?)."; }
+}
+$("gen12").onclick = () => genMnemonic(12); $("gen24").onclick = () => genMnemonic(24);
+$("vec").onclick = () => { $("mn").value = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"; $("pp").value = ""; $("path").value = "m/44'/60'/0'/0/0"; runPipe(); };
+const KNOWN = { "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about|": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+                "test test test test test test test test test test test junk|": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" };
+async function runPipe() {
+  const mn = $("mn").value.trim().split(/\s+/).join(" "), pp = $("pp").value, path = $("path").value.trim();
+  const out = $("pipe"); out.innerHTML = '<div class="note">deriving…</div>';
+  try {
+    const t0 = performance.now();
+    const seed = await Wallet.mnemonicToSeed(mn, pp);
+    const t1 = performance.now();
+    const { node, trace } = await Wallet.derive(seed, path);
+    const a = Wallet.addressFromPriv(node.k);
+    const cs = Wallet.checksum(a.address);
+    const st = (name, tag, val, why) => `<div class="stage"><div><b>${name}</b><div class="note">${tag}</div></div><div><div class="val">${val}</div><div class="note">${why}</div></div></div>`;
+    const ar = (t) => `<div class="arrow">▼ ${t}</div>`;
+    let html = st("Mnemonic", "BIP-39 · encoding", mn, `${mn.split(" ").length} words × 11 bits = entropy + checksum`) +
+      ar("PBKDF2-HMAC-SHA512 · 2048 iterations · salt = \"mnemonic\" + passphrase" + ` (${(t1 - t0).toFixed(0)} ms)`) +
+      st("Seed", "512 bits", hex(seed), "key stretching makes each passphrase guess cost 2048 HMAC calls") +
+      ar("HMAC-SHA512(key = \"Bitcoin seed\", seed)") +
+      st("Master key", "BIP-32", "k = " + trace[0].k.toString(16).padStart(64, "0") + "<br>chain code = " + hex(trace[0].c), "left half = private key, right half = chain code");
+    for (let i = 1; i < trace.length; i++) html += ar("CKDpriv " + trace[i].path.split("/").pop() + (trace[i].path.endsWith("'") ? " (hardened: uses parent private key)" : " (normal: uses parent public key)")) +
+      st(trace[i].path, "BIP-32/44", trace[i].k.toString(16).padStart(64, "0"), ["purpose 44'", "coin type 60' = Ethereum", "account", "change (0 = external)", "address index"][i - 1] || "");
+    html += ar("Q = k·G on secp256k1") +
+      st("Public key", "secp256k1", "x = " + a.pub.x.toString(16).padStart(64, "0") + "<br>y = " + a.pub.y.toString(16).padStart(64, "0"), "64 bytes; public, but it does not reveal k (ECDLP)") +
+      ar("Keccak-256(x ‖ y), keep last 20 bytes") +
+      st("Address", "hashing", "keccak = " + hex(a.hash) + "<br>address = 0x" + a.address, "160-bit identifier") +
+      ar("EIP-55: uppercase letter i if nibble i of Keccak-256(lowercase hex) ≥ 8") +
+      st("Checksummed", "EIP-55", `<span class="key">${cs}</span>`, "what MetaMask/Rabby display for the same seed and path");
+    out.innerHTML = html;
+    const kn = KNOWN[mn + "|" + pp];
+    if (kn && path === "m/44'/60'/0'/0/0") out.innerHTML += `<p>Reference check against the published address for this mnemonic: ${cs === kn ? '<span class="badge ok">match ' + kn + '</span>' : '<span class="badge no">mismatch</span>'}</p>`;
+    try { const c = await Bip39.checkMnemonic(mn, await words()); $("mncheck").innerHTML = c.ok ? '<span class="badge ok">BIP-39 checksum valid</span>' : `<span class="badge no">${c.why}</span> (the seed is still computed: PBKDF2 accepts any string)`; }
+    catch { $("mncheck").textContent = "(wordlist offline: checksum not verified)"; }
+  } catch (e) { out.innerHTML = `<div class="badge no">${e.message}</div>`; }
+}
+$("runpipe").onclick = runPipe;
+
+async function runStat2() {
+  const N = Math.min(400, Math.max(5, +$("naddr").value | 0));
+  const mn = $("mn").value.trim(), pp = $("pp").value;
+  $("stat2prog").textContent = "deriving…";
+  const seed = await Wallet.mnemonicToSeed(mn, pp);
+  const base = await Wallet.derive(seed, "m/44'/60'/0'/0");
+  const rows = [], nib = new Array(16).fill(0), bits = new Array(160).fill(0);
+  let up = 0, letters = 0;
+  for (let i = 0; i < N; i++) {
+    const child = await Wallet.ckdPriv(base.node, i);
+    const a = Wallet.addressFromPriv(child.k), cs = Wallet.checksum(a.address);
+    rows.push([i, cs]);
+    for (const ch of a.address) nib[parseInt(ch, 16)]++;
+    const b = unhex(a.address);
+    for (let j = 0; j < 160; j++) bits[j] += (b[j >> 3] >> (7 - (j & 7))) & 1;
+    for (const ch of cs.slice(2)) if (/[a-fA-F]/.test(ch)) { letters++; if (ch === ch.toUpperCase()) up++; }
+    if (i % 10 === 0) { $("stat2prog").textContent = `derived ${i + 1}/${N}`; await new Promise((r) => setTimeout(r)); }
+  }
+  $("addrtab").innerHTML = "<tr><th>i</th><th>address (EIP-55)</th></tr>" + rows.map(([i, a]) => `<tr><td>${i}</td><td class="mono">${a}</td></tr>`).join("");
+  const exp = (N * 40) / 16, chi = nib.reduce((s, o) => s + (o - exp) ** 2 / exp, 0);
+  Plot.bars($("cnib"), { labels: "0123456789abcdef".split(""), groups: [{ values: nib, label: "hex digit count" }], hlines: [{ y: exp }], title: `Hex digits of ${N} addresses (dashed = uniform)` });
+  $("nibtxt").innerHTML = `χ² = ${chi.toFixed(1)} on 15 d.f. (5% critical value 25.0) → ${chi < 25 ? "uniformity not rejected" : "uniformity rejected"}`;
+  const frac = bits.map((b) => b / N);
+  Plot.line($("cbit2"), { series: [{ x: frac.map((_, i) => i), y: frac, points: true, r: 2, label: "share of 1s per address bit" }], yr: [0, 1], hlines: [{ y: 0.5 }], title: "Bit balance over the 160 address bits", xlabel: "bit position" });
+  const sd = Math.sqrt(0.25 / N);
+  $("bittxt").innerHTML = `mean = ${(frac.reduce((a, b) => a + b, 0) / 160).toFixed(3)}; under uniformity each value ≈ 0.5 ± ${(2 * sd).toFixed(3)} (2σ). EIP-55 letters in upper case: ${up}/${letters} = ${(up / letters).toFixed(3)} (expected 0.5).`;
+  // avalanche: change one character of the passphrase
+  const dSeed = [], dAddr = [];
+  const baseAddr = unhex(Wallet.addressFromPriv((await Wallet.derive(seed, "m/44'/60'/0'/0/0")).node.k).address);
+  for (let t = 0; t < 24; t++) {
+    const s2 = await Wallet.mnemonicToSeed(mn, pp + String.fromCharCode(97 + t));
+    let d = 0; for (let i = 0; i < 64; i++) d += popcount(seed[i] ^ s2[i]); dSeed.push(d / 512);
+    const a2 = unhex(Wallet.addressFromPriv((await Wallet.derive(s2, "m/44'/60'/0'/0/0")).node.k).address);
+    let e = 0; for (let i = 0; i < 20; i++) e += popcount(baseAddr[i] ^ a2[i]); dAddr.push(e / 160);
+  }
+  Plot.hist($("cav2"), { sets: [{ data: dSeed, label: "seed (512 bits)" }, { data: dAddr, label: "address (160 bits)" }], bins: 16, xr: [0.3, 0.7], title: "Avalanche: append one character to the passphrase", xlabel: "fraction of bits flipped" });
+  const m = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  $("avtxt").textContent = `mean flipped: seed ${(100 * m(dSeed)).toFixed(1)}%, address ${(100 * m(dAddr)).toFixed(1)}% (ideal 50%). Compare with Exercise 1, where the toy map has only a handful of possible outputs.`;
+  $("stat2prog").textContent = `done (${N} addresses)`;
+}
+$("runstat2").onclick = runStat2;
+
+$("runchk").onclick = () => {
+  const a = $("chk").value.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(a)) { $("chkout").innerHTML = '<span class="badge no">not a 40-hex-digit address</span>'; return; }
+  const good = Wallet.checksum(a.slice(2).toLowerCase());
+  const letters = [...a.slice(2)].filter((c) => /[a-fA-F]/.test(c)).length;
+  $("chkout").innerHTML = (Wallet.isValidChecksum(a) ? '<span class="badge ok">valid EIP-55 checksum</span>' : '<span class="badge no">checksum mismatch</span>') +
+    `<br>expected: ${good}<br>${letters} letters → ${letters} check bits; a random wrong address passes with probability 2^-${letters} ≈ ${(2 ** -letters).toExponential(2)}`;
+};
+$("typo").onclick = () => {
+  const a = Wallet.checksum($("chk").value.trim().slice(2).toLowerCase()).slice(2);
+  const hx = "0123456789abcdef"; let caught = 0, total = 10000; const rng = makeRng(7);
+  for (let t = 0; t < total; t++) {
+    const i = Math.floor(rng() * 40); let c;
+    do { c = hx[Math.floor(rng() * 16)]; } while (c === a[i].toLowerCase());
+    const typed = a.slice(0, i) + (a[i] === a[i].toUpperCase() && /[A-F]/.test(a[i]) ? c.toUpperCase() : c) + a.slice(i + 1);
+    if (!Wallet.isValidChecksum("0x" + typed)) caught++;
+  }
+  $("chkout").innerHTML += `<br>single-character typos detected: ${caught}/${total} = ${(100 * caught / total).toFixed(2)}% ${caught === total ? "(none slipped through: a miss requires the altered address to hash to a matching case pattern by chance)" : "(the misses happened to keep a valid case pattern by chance)"}`;
+};
+function hashDemo() {
+  const m = utf8($("hmsg").value);
+  $("hout").textContent = `Keccak-256 (Ethereum, pad 0x01): ${hex(Keccak.keccak256(m))}\nSHA3-256   (FIPS 202, pad 0x06): ${hex(Keccak.sha3_256(m))}`;
+}
+$("hmsg").oninput = hashDemo;
+
+setupCurve(); runEx1(); runStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HW2 · Toy ECC vs Caesar: encryption and cryptanalysis</title>
+<style>
+:root{
+  --paper:#fbf8f1; --ink:#2b2a27; --muted:#7a746a; --rule:#e4dccb; --hl:#fff1b8; --red:#b3261e; --blue:#1f4e8c; --green:#2e7d32;
+  --plot-fg:#4a463f; --plot-grid:rgba(120,110,90,.18); --plot-bg:#fffdf8;
+  --c1:#1f4e8c; --c2:#b3261e; --c3:#2e7d32; --c4:#a0620a; --c5:#6a1b9a; --c6:#00838f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.65 Georgia,"Times New Roman",serif}
+.layout{display:grid;grid-template-columns:240px 1fr;max-width:1240px;margin:auto}
+nav{position:sticky;top:0;align-self:start;height:100vh;padding:34px 18px;border-right:1px solid var(--rule);font:14px/1.5 system-ui,sans-serif}
+nav b{display:block;margin-bottom:10px;font-size:13px;letter-spacing:1.5px;color:var(--muted)}
+nav a{display:block;color:var(--ink);text-decoration:none;padding:4px 8px;border-radius:5px}
+nav a:hover{background:var(--hl)}
+main{padding:34px 40px 80px;min-width:0}
+h1{font-size:30px;margin:0 0 4px;font-weight:normal}
+.sub{color:var(--muted);font-style:italic;margin-bottom:26px}
+h2{font-weight:normal;font-size:23px;border-bottom:2px solid var(--ink);padding-bottom:4px;margin:44px 0 14px}
+h2 .n{color:var(--red);margin-right:8px}
+h3{font-size:17px;margin:20px 0 8px}
+.box{background:#fff;border:1px solid var(--rule);border-radius:4px;padding:16px 18px;margin:12px 0;box-shadow:2px 2px 0 var(--rule)}
+.row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+label{display:flex;flex-direction:column;font:12px system-ui,sans-serif;color:var(--muted)}
+input,select,textarea{font:14px ui-monospace,Consolas,monospace;border:1px solid #cfc6b2;background:#fffef9;border-radius:3px;padding:6px 8px;color:var(--ink)}
+textarea{width:100%;min-height:70px}
+button{font:600 13px system-ui,sans-serif;background:var(--ink);color:#fff;border:none;border-radius:3px;padding:8px 14px;cursor:pointer}
+button.alt{background:#fff;color:var(--ink);border:1px solid var(--ink)}
+code,.mono{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+.out{font:13px ui-monospace,Consolas,monospace;background:#f6f1e4;border-left:3px solid var(--blue);padding:10px 12px;white-space:pre-wrap;word-break:break-all;margin:10px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+th,td{border:1px solid var(--rule);padding:6px 9px;vertical-align:top;text-align:left}
+th{background:#f3ecdc;font-family:system-ui,sans-serif;font-size:13px}
+canvas{width:100%;height:270px;display:block}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.steps li{margin:4px 0}
+.tag{font:700 11px system-ui;padding:1px 7px;border-radius:9px;background:var(--hl)}
+.good{color:var(--green);font-weight:700} .bad{color:var(--red);font-weight:700}
+progress{width:260px;height:12px}
+@media (max-width:900px){.layout{grid-template-columns:1fr} nav{display:none} .two{grid-template-columns:1fr} main{padding:20px}}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <b>CONTENTS</b>
+  <a href="#ecc">1 · Toy ECC encryption</a>
+  <a href="#caesar">2 · Caesar cipher</a>
+  <a href="#compare">3 · Comparing the schemes</a>
+  <a href="#crypt">4 · Statistical cryptanalysis</a>
+  <a href="#exp">5 · Effect of text length</a>
+  <a href="#attack">6 · Attacking the small key</a>
+  <a href="#why">7 · Why real ECC survives</a>
+  <a href="#other">8 · Other weaknesses</a>
+</nav>
+<main>
+<h1>Homework 2 — Two ciphers, two ways to break them</h1>
+<div class="sub">A toy public-key scheme on secp256k1 against the Caesar cipher: encryption, statistical cryptanalysis and a search over a restricted key space. Student: <span contenteditable="true">your name</span>, ID <span contenteditable="true">0000000</span>.</div>
+
+<h2 id="ecc"><span class="n">§1</span>Toy elliptic-curve encryption (ECIES-like)</h2>
+<p>The scheme reuses the scalar multiplication of Homework 1 on the real curve secp256k1. The only "toy" element is that the <b>private key is drawn from a small range</b> [1, 2<sup>b</sup>−1].</p>
+<div class="box">
+  <div class="row">
+    <label>key size b (bits) <input id="b" type="number" value="20" min="4" max="40" style="width:80px"></label>
+    <button id="keygen">Generate key pair</button>
+    <label style="flex:1">message <input id="msg" value="Meet me at the library at nine. Bring the notes on secp256k1." style="width:100%"></label>
+    <button id="enc">Encrypt &amp; decrypt</button>
+  </div>
+  <div class="out" id="keys"></div>
+  <div class="out" id="encout"></div>
+</div>
+<h3>Algorithm and role of the keys</h3>
+<ol class="steps">
+  <li><b>Key generation (receiver).</b> Pick the private key d ∈ [1, 2<sup>b</sup>−1] and publish Q = dG. Only d stays secret.</li>
+  <li><b>Encryption (sender, uses only Q).</b> Pick a fresh ephemeral scalar r (full 256-bit range) and send C₁ = rG. The shared point is S = rQ = rdG.</li>
+  <li>Derive a key stream from S: block<sub>i</sub> = SHA-256("HW2" ‖ x(S) ‖ i). The ciphertext body is C₂ = M ⊕ stream.</li>
+  <li><b>Decryption (receiver, uses d).</b> S = dC₁ = drG, the same point, so the same stream gives M = C₂ ⊕ stream.</li>
+</ol>
+<p>The public key lets anyone encrypt. The private key is the only way to rebuild S from C₁ (Diffie–Hellman). The ephemeral r makes encryption <i>randomised</i>: the same message encrypts differently every time.</p>
+
+<h2 id="caesar"><span class="n">§2</span>The Caesar cipher on the same message</h2>
+<div class="box">
+  <div class="row">
+    <label>shift key s <input id="shift" type="range" min="0" max="25" value="7"></label><span id="shiftv" class="mono">7</span>
+  </div>
+  <div class="out" id="caesarout"></div>
+  <canvas id="cfreq"></canvas>
+</div>
+<p>E<sub>s</sub>(x) = (x + s) mod 26 and D<sub>s</sub>(y) = (y − s) mod 26 on the letters A–Z. Case and non-letters are kept. The histogram shows the core weakness: the ciphertext letter distribution is the plaintext distribution <i>rotated</i> by s.</p>
+
+<h2 id="compare"><span class="n">§3</span>Similarities and differences</h2>
+<table>
+<tr><th></th><th>Caesar</th><th>Toy ECC (this page)</th></tr>
+<tr><td>Type</td><td>symmetric, monoalphabetic substitution: the same key encrypts and decrypts</td><td>asymmetric (hybrid): Q encrypts, d decrypts; a symmetric XOR stream does the bulk work</td></tr>
+<tr><td>Encryption</td><td>add s to each letter</td><td>random r, C₁ = rG, stream from rQ, C₂ = M ⊕ stream</td></tr>
+<tr><td>Decryption</td><td>subtract s</td><td>dC₁ = rQ → same stream → XOR</td></tr>
+<tr><td>Determinism</td><td>deterministic: equal plaintexts give equal ciphertexts</td><td>randomised by r</td></tr>
+<tr><td>Key space</td><td>26 (log₂ 26 ≈ 4.7 bits)</td><td id="ks">2<sup>b</sup>−1 here; n ≈ 2<sup>256</sup> for a real key</td></tr>
+<tr><td>Ciphertext statistics</td><td>letter frequencies preserved up to a rotation, word lengths and punctuation visible</td><td>bytes indistinguishable from uniform (see the χ² in §1); only the length leaks</td></tr>
+<tr><td>Best attack</td><td>statistics on the ciphertext (§4), or simply trying all 26 keys</td><td>no statistic helps; search for d using only Q (§6)</td></tr>
+</table>
+
+<h2 id="crypt"><span class="n">§4</span>Statistical cryptanalysis of Caesar</h2>
+<p>Reference model: letter (and letter-pair) frequencies of English estimated from a training corpus, which you can replace with your own. For each candidate shift s, decrypt and score how English-like the result is. The best score wins.</p>
+<div class="box">
+  <div class="row">
+    <label>reference distribution <select id="ref"><option value="corpus">estimated from the training corpus</option><option value="table">published English table</option></select></label>
+    <button class="alt" id="showcorpus">Show / edit training corpus</button>
+  </div>
+  <textarea id="corpus" style="display:none;min-height:180px"></textarea>
+  <label style="margin-top:10px">ciphertext to attack <textarea id="ct"></textarea></label>
+  <button id="crack">Recover the key</button>
+  <div class="two">
+    <div><table id="ranktab"></table></div>
+    <div><canvas id="cscore"></canvas></div>
+  </div>
+  <div class="out" id="crackout"></div>
+</div>
+<h3>The scoring functions compared</h3>
+<ul>
+  <li><b>χ² distance</b> Σ (O<sub>c</sub> − E<sub>c</sub>)²/E<sub>c</sub> between the observed letter counts of the candidate plaintext and the expected counts. Lower is better.</li>
+  <li><b>Unigram log-likelihood</b> Σ log p(c). This is the maximum-likelihood choice of s under the model "letters are i.i.d. from English".</li>
+  <li><b>Bigram log-likelihood</b> Σ log p(c<sub>t</sub> | c<sub>t−1</sub>), with add-one smoothing. It uses context, so it needs fewer letters.</li>
+  <li><b>Exhaustive search + dictionary</b>: try all 26 keys and count the words that appear in a list of common English words. This is the "human" method, and it is reliable once a few words are present.</li>
+</ul>
+
+<h2 id="exp"><span class="n">§5</span>Effectiveness vs. ciphertext length</h2>
+<div class="box">
+  <div class="row">
+    <label>trials per length <input id="trials" type="number" value="300" style="width:80px"></label>
+    <button id="runexp">Run experiment</button><span id="expmsg" class="mono"></span>
+  </div>
+  <canvas id="cexp" style="height:320px"></canvas>
+  <div id="exptab"></div>
+</div>
+<p>The test texts are random windows of a <i>held-out</i> passage, not the training corpus, with a random key each time. Statistics need enough letters: with 5–10 letters the frequency methods often fail, because short English fragments deviate strongly from the average distribution. From about 30–40 letters on, every method recovers the key almost always. The bigram model converges fastest, because letter pairs ("th", "he", "in") carry more information per letter than single frequencies. The dictionary method is the slowest at short lengths, because it needs whole common words to fall inside the window. Limitations: the attack assumes the plaintext language is known and the text is "typical". Lipograms, code, lists of numbers or a different language break the reference model. Exhaustive search always <i>finds</i> the key among 26 candidates; statistics are only needed to <i>recognise</i> it automatically.</p>
+
+<h2 id="attack"><span class="n">§6</span>Attacking the toy ECC through its restricted key space</h2>
+<p>The attacker knows only the public key Q, the ciphertext (C₁, C₂) and the fact that d &lt; 2<sup>b</sup>. Two algorithms:</p>
+<ul>
+  <li><b>Exhaustive search</b>: compute G, 2G, 3G, … by repeated addition until the point equals Q. That takes up to 2<sup>b</sup> additions (average 2<sup>b−1</sup>).</li>
+  <li><b>Baby-step giant-step</b> (Shanks): write d = i·m + j with m = ⌈2<sup>b/2</sup>⌉. Store jG for all j, then walk Q − i(mG) until a match. That takes about 2·2<sup>b/2</sup> operations and 2<sup>b/2</sup> memory.</li>
+</ul>
+<div class="box">
+  <div class="row">
+    <button id="brute">Exhaustive search for d</button>
+    <button id="bsgs">Baby-step giant-step</button>
+    <progress id="prog" value="0" max="1"></progress>
+  </div>
+  <div class="out" id="atkout">Generate a key pair and encrypt a message in §1 first.</div>
+  <div class="row"><button class="alt" id="scaling">Measure cost for b = 8 … 26</button></div>
+  <canvas id="ccost" style="height:300px"></canvas>
+  <div id="costtxt"></div>
+</div>
+<p><b>Statistical vs. key-space attack.</b> The Caesar attack <i>reads information from the ciphertext</i>: its letter distribution is a noisy rotated copy of English, and more ciphertext gives a more reliable estimate. The ECC attack ignores the ciphertext statistics completely, which carry nothing. It exploits only the fact that the <i>key generator</i> was weak, and it succeeds with certainty once the search covers the key range, whatever the message length.</p>
+
+<h2 id="why"><span class="n">§7</span>Why the same approach fails on properly configured ECC</h2>
+<p>With d uniform in [1, n−1] and n ≈ 1.16·10<sup>77</sup>, exhaustive search needs about 2<sup>255</sup> additions on average. The generic algorithms (BSGS, Pollard rho and kangaroo) need about √n ≈ 2<sup>128</sup> operations, and for secp256k1 no faster algorithm is known (ECDLP). The measured speed in §6 turns that into time: see the extrapolation printed under the chart. It exceeds the age of the universe by dozens of orders of magnitude, even with all computers on Earth working in parallel. The Caesar weakness, in contrast, does not depend on computing power at all: 26 keys and frequency leakage are structural.</p>
+
+<h2 id="other"><span class="n">§8</span>Other attacks, and which weakness each exploits</h2>
+<table>
+<tr><th>Attack</th><th>Exploits</th><th>Due to</th></tr>
+<tr><td>Brute force / BSGS / Pollard kangaroo on d</td><td>d &lt; 2<sup>b</sup></td><td>restricted key space</td></tr>
+<tr><td>Ephemeral-key search on r</td><td>if r were also small, S = rQ could be found from C₁</td><td>restricted key space (of r)</td></tr>
+<tr><td>Key-stream reuse</td><td>reusing r for two messages gives the same stream, so C₂ ⊕ C₂′ = M ⊕ M′ (a classic two-time pad)</td><td>scheme design / misuse</td></tr>
+<tr><td>Malleability (demo below)</td><td>no authentication tag: flipping bit i of C₂ flips bit i of the decrypted M</td><td>scheme design: real ECIES adds a MAC (encrypt-then-MAC) or uses AEAD</td></tr>
+<tr><td>Invalid-curve / small-subgroup points</td><td>a receiver that does not check that C₁ is on the curve can leak d mod small factors</td><td>implementation (secp256k1 has cofactor 1, but the on-curve check is still needed)</td></tr>
+<tr><td>Length leakage</td><td>|C₂| = |M|</td><td>design (padding would hide it)</td></tr>
+</table>
+<div class="box"><div class="row"><label>flip bit # of C₂ <input id="flipbit" type="number" value="0" min="0" style="width:90px"></label><button id="flip">Tamper and decrypt</button></div><div class="out" id="flipout"></div></div>
+</main>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// plot.js — tiny canvas plotting helper (lines, scatter, bars, histograms).
+// Colours come from CSS variables of the page: --plot-fg, --plot-grid, --plot-bg
+// and --c1..--c6 for series, so each homework keeps its own look.
+// ---------------------------------------------------------------------------
+const Plot = (() => {
+  const css = (name, fb) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fb;
+  const palette = () => [1, 2, 3, 4, 5, 6].map((i) => css("--c" + i, ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"][i - 1]));
+  function setup(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth || 600, h = canvas.clientHeight || 300;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const bg = css("--plot-bg", "transparent");
+    if (bg !== "transparent") { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    return { ctx, w, h };
+  }
+  const niceNum = (range, round) => {
+    const e = Math.floor(Math.log10(range)), f = range / 10 ** e;
+    let nf;
+    if (round) nf = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+    else nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+    return nf * 10 ** e;
+  };
+  function ticks(lo, hi, n = 5) {
+    if (!(hi > lo)) { hi = lo + 1; }
+    const step = niceNum(niceNum(hi - lo, false) / (n - 1), true);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toPrecision(12));
+    return out;
+  }
+  const fmt = (v) => {
+    const a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(0);
+    return +v.toPrecision(4) + "";
+  };
+  // generic axes frame; returns mapping functions
+  function frame(canvas, o) {
+    const { ctx, w, h } = setup(canvas);
+    const fg = css("--plot-fg", "#333"), grid = css("--plot-grid", "rgba(0,0,0,.1)");
+    const L = 58, R = 14, T = o.title ? 26 : 12, B = 42;
+    const tx = (v) => (o.xlog ? Math.log10(v) : v), ty = (v) => (o.ylog ? Math.log10(v) : v);
+    let [x0, x1] = o.xr, [y0, y1] = o.yr;
+    [x0, x1, y0, y1] = [tx(x0), tx(x1), ty(y0), ty(y1)];
+    if (x1 === x0) x1 = x0 + 1;
+    if (y1 === y0) { y1 = y0 + 1; y0 = y0 - 1; }
+    const X = (v) => L + ((tx(v) - x0) / (x1 - x0)) * (w - L - R);
+    const Y = (v) => h - B - ((ty(v) - y0) / (y1 - y0)) * (h - T - B);
+    ctx.font = "11px system-ui, sans-serif"; ctx.fillStyle = fg; ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    const xt = o.xlog ? ticks(x0, x1, 6).filter(Number.isInteger) : ticks(x0, x1, 6);
+    const yt = o.ylog ? ticks(y0, y1, 6).filter(Number.isInteger) : ticks(y0, y1, 6);
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt) {
+      const px = L + ((t - x0) / (x1 - x0)) * (w - L - R);
+      if (px < L - 1 || px > w - R + 1) continue;
+      ctx.beginPath(); ctx.moveTo(px, T); ctx.lineTo(px, h - B); ctx.stroke();
+      ctx.fillText(o.xlog ? "1e" + t : (o.xfmt || fmt)(t), px, h - B + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt) {
+      const py = h - B - ((t - y0) / (y1 - y0)) * (h - T - B);
+      if (py < T - 1 || py > h - B + 1) continue;
+      ctx.beginPath(); ctx.moveTo(L, py); ctx.lineTo(w - R, py); ctx.stroke();
+      ctx.fillText(o.ylog ? "1e" + t : fmt(t), L - 6, py);
+    }
+    ctx.strokeStyle = fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, h - B); ctx.lineTo(w - R, h - B); ctx.stroke();
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (o.xlabel) ctx.fillText(o.xlabel, (L + w - R) / 2, h - 4);
+    if (o.title) { ctx.font = "600 12px system-ui, sans-serif"; ctx.fillText(o.title, (L + w - R) / 2, 18); ctx.font = "11px system-ui, sans-serif"; }
+    if (o.ylabel) { ctx.save(); ctx.translate(13, (T + h - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText(o.ylabel, 0, 0); ctx.restore(); }
+    ctx.save(); ctx.beginPath(); ctx.rect(L, T, w - L - R, h - T - B); ctx.clip();
+    return { ctx, X, Y, w, h, L, R, T, B, fg, done: () => ctx.restore() };
+  }
+  function range(arrs, pad = 0.05, log = false) {
+    let lo = Infinity, hi = -Infinity;
+    for (const a of arrs) for (const v of a) if (Number.isFinite(v) && (!log || v > 0)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!Number.isFinite(lo)) return [0, 1];
+    if (log) return [lo, hi];
+    const d = (hi - lo) || Math.abs(hi) || 1;
+    return [lo - d * pad, hi + d * pad];
+  }
+  function legend(F, items) {
+    const { ctx, w, L } = F;
+    ctx.restore(); ctx.save();
+    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let x = L + 8, y = F.T + 10;
+    for (const it of items) {
+      if (!it.label) continue;
+      const tw = ctx.measureText(it.label).width;
+      if (x + tw + 30 > w - 10) { x = L + 8; y += 15; }
+      ctx.fillStyle = it.color; ctx.fillRect(x, y - 4, 14, 8);
+      ctx.fillStyle = F.fg; ctx.fillText(it.label, x + 18, y);
+      x += tw + 34;
+    }
+  }
+  // series: [{x:[], y:[], color, width, dash, label, points:true}]
+  function line(canvas, o) {
+    const pal = palette();
+    const S = o.series.map((s, i) => ({ color: pal[i % pal.length], width: 1.6, ...s }));
+    const xr = o.xr || range(S.map((s) => s.x), 0, o.xlog);
+    const yr = o.yr || range(S.map((s) => s.y), 0.06, o.ylog);
+    const F = frame(canvas, { ...o, xr, yr });
+    const { ctx, X, Y } = F;
+    for (const s of S) {
+      ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = s.width; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      if (!s.points || s.connect) {
+        ctx.beginPath(); let pen = false;
+        for (let i = 0; i < s.x.length; i++) {
+          const ok = Number.isFinite(s.y[i]) && (!o.ylog || s.y[i] > 0) && (!o.xlog || s.x[i] > 0);
+          if (!ok) { pen = false; continue; }
+          const px = X(s.x[i]), py = Y(s.y[i]);
+          if (!pen) { ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      if (s.points) for (let i = 0; i < s.x.length; i++) {
+        if (!Number.isFinite(s.y[i]) || (o.ylog && s.y[i] <= 0)) continue;
+        ctx.beginPath(); ctx.arc(X(s.x[i]), Y(s.y[i]), s.r || 2.6, 0, 7); ctx.fill();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(xr[0]), Y(hl.y)); ctx.lineTo(X(xr[1]), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    if (o.legend !== false) legend(F, S);
+    F.done();
+  }
+  // bars: labels[], groups: [{values:[], color, label}]
+  function bars(canvas, o) {
+    const pal = palette();
+    const G = o.groups.map((g, i) => ({ color: pal[i % pal.length], ...g }));
+    const n = o.labels.length;
+    const maxV = Math.max(...G.flatMap((g) => g.values), o.ymax || 0) * 1.08 || 1;
+    const F = frame(canvas, { ...o, xr: [0, n], yr: [0, maxV], xfmt: () => "" });
+    const { ctx, X, Y } = F;
+    const bw = (X(1) - X(0)) * 0.8 / G.length;
+    G.forEach((g, gi) => {
+      ctx.fillStyle = g.color;
+      g.values.forEach((v, i) => {
+        const x = X(i) + (X(1) - X(0)) * 0.1 + gi * bw;
+        ctx.fillRect(x, Y(v), bw - 1, Y(0) - Y(v));
+      });
+    });
+    if (o.hlines) for (const hl of o.hlines) { ctx.strokeStyle = hl.color || F.fg; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(hl.y)); ctx.lineTo(X(n), Y(hl.y)); ctx.stroke(); ctx.setLineDash([]); }
+    F.done();
+    ctx.fillStyle = F.fg; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.font = "11px system-ui, sans-serif";
+    const every = Math.ceil(n / 24);
+    o.labels.forEach((l, i) => { if (i % every === 0) ctx.fillText(l, X(i + 0.5), F.h - F.B + 5); });
+    if (G.length > 1 || G[0].label) { ctx.save(); legend(F, G); ctx.restore(); }
+  }
+  // histogram of data with optional density curve overlay(fn)
+  function hist(canvas, o) {
+    const pal = palette();
+    const sets = (o.sets || [{ data: o.data, label: o.label }]).map((s, i) => ({ color: pal[i % pal.length], ...s }));
+    const all = sets.flatMap((s) => s.data);
+    let [lo, hi] = o.xr || [Math.min(...all), Math.max(...all)];
+    if (hi === lo) { lo -= 0.5; hi += 0.5; }
+    const nb = o.bins || 30, bw = (hi - lo) / nb;
+    const H = sets.map((s) => {
+      const c = new Array(nb).fill(0);
+      for (const v of s.data) { const j = Math.min(nb - 1, Math.max(0, Math.floor((v - lo) / bw))); c[j]++; }
+      return c.map((x) => (o.density ? x / (s.data.length * bw) : x));
+    });
+    let ymax = Math.max(...H.flat());
+    const curves = (o.overlay || []).map((ov) => {
+      const xs = [], ys = [];
+      for (let i = 0; i <= 200; i++) { const x = lo + ((hi - lo) * i) / 200; xs.push(x); ys.push(ov.fn(x)); }
+      ymax = Math.max(ymax, ...ys.filter(Number.isFinite));
+      return { xs, ys, ...ov };
+    });
+    const F = frame(canvas, { ...o, xr: [lo, hi], yr: [0, ymax * 1.08 || 1] });
+    const { ctx, X, Y } = F;
+    sets.forEach((s, si) => {
+      ctx.fillStyle = s.color; ctx.globalAlpha = sets.length > 1 ? 0.45 : 0.75;
+      H[si].forEach((v, j) => ctx.fillRect(X(lo + j * bw) + 0.5, Y(v), X(lo + (j + 1) * bw) - X(lo + j * bw) - 1, Y(0) - Y(v)));
+    });
+    ctx.globalAlpha = 1;
+    curves.forEach((c) => {
+      ctx.strokeStyle = c.color || F.fg; ctx.lineWidth = 2; ctx.setLineDash(c.dash || []);
+      ctx.beginPath(); c.xs.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(c.ys[i])) : ctx.moveTo(X(x), Y(c.ys[i])))); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+    legend(F, [...sets, ...curves.map((c) => ({ label: c.label, color: c.color || F.fg }))]);
+    F.done();
+  }
+  return { line, bars, hist, css };
+})();
+
+// seeded PRNG (mulberry32) + helpers shared by the statistics homeworks
+function makeRng(seed = 12345) {
+  let a = seed >>> 0;
+  const u = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let spare = null;
+  u.normal = () => {
+    if (spare !== null) { const s = spare; spare = null; return s; }
+    let x, y, r;
+    do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r === 0 || r >= 1);
+    const f = Math.sqrt((-2 * Math.log(r)) / r);
+    spare = y * f; return x * f;
+  };
+  return u;
+}
+// standard normal pdf / cdf (cdf via erfc with a high-accuracy rational approximation, W. J. Cody style)
+const Normal = {
+  pdf: (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI),
+  cdf: (x) => {
+    // Hart / West double-precision algorithm (absolute error ~1e-15)
+    const z = Math.abs(x);
+    let c;
+    if (z > 37) c = 0;
+    else {
+      const e = Math.exp(-z * z / 2);
+      if (z < 7.07106781186547) {
+        let n = 3.52624965998911e-02 * z + 0.700383064443688;
+        n = n * z + 6.37396220353165; n = n * z + 33.912866078383; n = n * z + 112.079291497871;
+        n = n * z + 221.213596169931; n = n * z + 220.206867912376;
+        let d = 8.83883476483184e-02 * z + 1.75566716318264;
+        d = d * z + 16.064177579207; d = d * z + 86.7807322029461; d = d * z + 296.564248779674;
+        d = d * z + 637.333633378831; d = d * z + 793.826512519948; d = d * z + 440.413735824752;
+        c = (e * n) / d;
+      } else {
+        let b = z + 0.65; b = z + 4 / b; b = z + 3 / b; b = z + 2 / b; b = z + 1 / b;
+        c = e / b / 2.506628274631;
+      }
+    }
+    return x > 0 ? 1 - c : c;
+  },
+};
+
+</script>
+<script>
+// ---------------------------------------------------------------------------
+// crypto_core.js — small, dependency-free primitives used by HW1 and HW2.
+// Educational code: BigInt arithmetic, no constant-time guarantees.
+// ---------------------------------------------------------------------------
+
+// ---------- byte helpers ----------
+const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
+const unhex = (h) => {
+  h = h.replace(/^0x/, "");
+  if (h.length % 2) h = "0" + h;
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(2 * i, 2), 16);
+  return out;
+};
+const utf8 = (s) => new TextEncoder().encode(s);
+const concatBytes = (...arrs) => {
+  const out = new Uint8Array(arrs.reduce((a, x) => a + x.length, 0));
+  let o = 0;
+  for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+};
+const bigToBytes = (v, len = 32) => unhex(v.toString(16).padStart(len * 2, "0"));
+const bytesToBig = (u8) => BigInt("0x" + (hex(u8) || "0"));
+const ser32 = (i) => new Uint8Array([(i >>> 24) & 255, (i >>> 16) & 255, (i >>> 8) & 255, i & 255]);
+
+// ---------- Keccak-256 (original Keccak padding 0x01, as used by Ethereum) ----------
+const Keccak = (() => {
+  const M64 = (1n << 64n) - 1n;
+  // round constants generated by the LFSR of the Keccak reference (no hand-typed tables)
+  const rcBit = (t) => {
+    if (t % 255 === 0) return 1;
+    let R = 1;
+    for (let i = 1; i <= t % 255; i++) {
+      R <<= 1;
+      if (R & 0x100) R ^= 0x171;
+    }
+    return R & 1;
+  };
+  const RC = [];
+  for (let ir = 0; ir < 24; ir++) {
+    let c = 0n;
+    for (let j = 0; j <= 6; j++) if (rcBit(j + 7 * ir)) c |= 1n << BigInt((1 << j) - 1);
+    RC.push(c);
+  }
+  // rotation offsets r[x][y] generated by the (x,y) -> (y, 2x+3y) walk
+  const ROT = Array.from({ length: 25 }, () => 0n);
+  {
+    let x = 1, y = 0;
+    for (let t = 0; t < 24; t++) {
+      ROT[x + 5 * y] = BigInt((((t + 1) * (t + 2)) / 2) % 64);
+      [x, y] = [y, (2 * x + 3 * y) % 5];
+    }
+  }
+  const rotl = (v, n) => (n === 0n ? v : ((v << n) | (v >> (64n - n))) & M64);
+  function f(A) {
+    const C = new Array(5), B = new Array(25);
+    for (let round = 0; round < 24; round++) {
+      for (let x = 0; x < 5; x++) C[x] = A[x] ^ A[x + 5] ^ A[x + 10] ^ A[x + 15] ^ A[x + 20];
+      for (let x = 0; x < 5; x++) {
+        const D = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1n);
+        for (let y = 0; y < 5; y++) A[x + 5 * y] ^= D;
+      }
+      for (let x = 0; x < 5; x++)
+        for (let y = 0; y < 5; y++) B[y + 5 * ((2 * x + 3 * y) % 5)] = rotl(A[x + 5 * y], ROT[x + 5 * y]);
+      for (let x = 0; x < 5; x++)
+        for (let y = 0; y < 5; y++)
+          A[x + 5 * y] = B[x + 5 * y] ^ (~B[((x + 1) % 5) + 5 * y] & M64 & B[((x + 2) % 5) + 5 * y]);
+      A[0] ^= RC[round];
+    }
+  }
+  function keccak256(msg, pad = 0x01) {
+    const rate = 136;
+    const padLen = rate - (msg.length % rate);
+    const P = new Uint8Array(msg.length + padLen);
+    P.set(msg);
+    P[msg.length] ^= pad; // 0x01 = original Keccak (Ethereum); 0x06 = FIPS-202 SHA3-256
+    P[P.length - 1] ^= 0x80;
+    const A = Array.from({ length: 25 }, () => 0n);
+    for (let off = 0; off < P.length; off += rate) {
+      for (let i = 0; i < rate / 8; i++) {
+        let lane = 0n;
+        for (let b = 7; b >= 0; b--) lane = (lane << 8n) | BigInt(P[off + 8 * i + b]);
+        A[i] ^= lane;
+      }
+      f(A);
+    }
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 4; i++) {
+      let lane = A[i];
+      for (let b = 0; b < 8; b++) { out[8 * i + b] = Number(lane & 255n); lane >>= 8n; }
+    }
+    return out;
+  }
+  return { keccak256, sha3_256: (m) => keccak256(m, 0x06) };
+})();
+
+// ---------- secp256k1 ----------
+const EC = (() => {
+  const P = 2n ** 256n - 2n ** 32n - 977n;
+  const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+  const G = {
+    x: 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798n,
+    y: 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8n,
+  };
+  const mod = (a, m = P) => { const r = a % m; return r >= 0n ? r : r + m; };
+  const inv = (a, m = P) => {
+    let [lm, hm, low, high] = [1n, 0n, mod(a, m), m];
+    while (low > 1n) {
+      const r = high / low;
+      [lm, hm, low, high] = [hm - lm * r, lm, high - low * r, low];
+    }
+    return mod(lm, m);
+  };
+  // Jacobian coordinates (X, Y, Z) with x = X/Z^2, y = Y/Z^3; Z = 0 is the point at infinity
+  const INF = { X: 1n, Y: 1n, Z: 0n };
+  const toJ = (p) => (p ? { X: p.x, Y: p.y, Z: 1n } : INF);
+  const fromJ = (J) => {
+    if (J.Z === 0n) return null;
+    const zi = inv(J.Z), zi2 = mod(zi * zi);
+    return { x: mod(J.X * zi2), y: mod(J.Y * zi2 * zi) };
+  };
+  function dbl(J) {
+    if (J.Z === 0n || J.Y === 0n) return INF;
+    const A = mod(J.X * J.X), B = mod(J.Y * J.Y), C = mod(B * B);
+    const D = mod(2n * (mod((J.X + B) ** 2n) - A - C));
+    const E = mod(3n * A), F = mod(E * E);
+    const X3 = mod(F - 2n * D);
+    return { X: X3, Y: mod(E * (D - X3) - 8n * C), Z: mod(2n * J.Y * J.Z) };
+  }
+  // mixed addition: Jacobian J + affine q
+  function addMixed(J, q) {
+    if (!q) return J;
+    if (J.Z === 0n) return toJ(q);
+    const Z1Z1 = mod(J.Z * J.Z);
+    const U2 = mod(q.x * Z1Z1), S2 = mod(q.y * J.Z * Z1Z1);
+    const H = mod(U2 - J.X), r = mod(S2 - J.Y);
+    if (H === 0n) return r === 0n ? dbl(J) : INF;
+    const HH = mod(H * H), HHH = mod(H * HH), V = mod(J.X * HH);
+    const X3 = mod(r * r - HHH - 2n * V);
+    return { X: X3, Y: mod(r * (V - X3) - J.Y * HHH), Z: mod(J.Z * H) };
+  }
+  function mul(k, p = G) {
+    k = mod(k, N);
+    let R = INF;
+    for (let i = BigInt(k.toString(2).length) - 1n; i >= 0n; i--) {
+      R = dbl(R);
+      if ((k >> i) & 1n) R = addMixed(R, p);
+    }
+    return fromJ(R);
+  }
+  const add = (a, b) => fromJ(addMixed(toJ(a), b));
+  const neg = (a) => (a ? { x: a.x, y: mod(-a.y) } : null);
+  const eq = (a, b) => (a === null || b === null ? a === b : a.x === b.x && a.y === b.y);
+  // equality of a Jacobian point with an affine point without inversion
+  const eqJA = (J, q) => {
+    if (J.Z === 0n) return q === null;
+    const z2 = mod(J.Z * J.Z);
+    return mod(q.x * z2) === J.X && mod(q.y * z2 * J.Z) === J.Y;
+  };
+  const onCurve = (p) => mod(p.y * p.y - p.x ** 3n - 7n) === 0n;
+  const compress = (p) => concatBytes(new Uint8Array([p.y & 1n ? 3 : 2]), bigToBytes(p.x));
+  const uncompressed = (p) => concatBytes(bigToBytes(p.x), bigToBytes(p.y)); // 64 bytes, no 0x04 prefix
+  return { P, N, G, mod, inv, mul, add, neg, eq, eqJA, onCurve, compress, uncompressed, toJ, fromJ, addMixed, dbl, INF };
+})();
+
+// ---------- WebCrypto wrappers ----------
+const subtle = globalThis.crypto.subtle;
+async function hmacSha512(key, data) {
+  const k = await subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  return new Uint8Array(await subtle.sign("HMAC", k, data));
+}
+async function sha256(data) { return new Uint8Array(await subtle.digest("SHA-256", data)); }
+async function sha512(data) { return new Uint8Array(await subtle.digest("SHA-512", data)); }
+async function pbkdf2Sha512(password, salt, iterations, bytes) {
+  const k = await subtle.importKey("raw", password, "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await subtle.deriveBits({ name: "PBKDF2", hash: "SHA-512", salt, iterations }, k, bytes * 8));
+}
+
+// ---------- BIP-39 / BIP-32 / BIP-44 / Ethereum address / EIP-55 ----------
+const Wallet = {
+  // BIP-39: seed = PBKDF2-HMAC-SHA512(NFKD(mnemonic), "mnemonic" + NFKD(passphrase), 2048, 64 bytes)
+  async mnemonicToSeed(mnemonic, passphrase = "") {
+    const m = mnemonic.normalize("NFKD").trim().split(/\s+/).join(" ");
+    return pbkdf2Sha512(utf8(m), utf8(("mnemonic" + passphrase).normalize("NFKD")), 2048, 64);
+  },
+  // BIP-32 master key: HMAC-SHA512(key = "Bitcoin seed", seed)
+  async masterKey(seed) {
+    const I = await hmacSha512(utf8("Bitcoin seed"), seed);
+    return { k: bytesToBig(I.slice(0, 32)), c: I.slice(32), path: "m" };
+  },
+  // BIP-32 private child key derivation CKDpriv
+  async ckdPriv(node, index) {
+    const hardened = index >= 0x80000000;
+    const data = hardened
+      ? concatBytes(new Uint8Array([0]), bigToBytes(node.k), ser32(index))
+      : concatBytes(EC.compress(EC.mul(node.k)), ser32(index));
+    const I = await hmacSha512(node.c, data);
+    const IL = bytesToBig(I.slice(0, 32));
+    const k = EC.mod(IL + node.k, EC.N);
+    const label = hardened ? index - 0x80000000 + "'" : String(index);
+    return { k, c: I.slice(32), path: node.path + "/" + label };
+  },
+  parsePath(path) {
+    return path.replace(/^m\/?/, "").split("/").filter(Boolean).map((s) => {
+      const h = /['hH]$/.test(s);
+      const v = parseInt(s, 10);
+      if (!Number.isInteger(v) || v < 0 || v >= 0x80000000) throw new Error("bad path segment " + s);
+      return h ? v + 0x80000000 : v;
+    });
+  },
+  async derive(seed, path) {
+    let node = await this.masterKey(seed);
+    const trace = [node];
+    for (const i of this.parsePath(path)) { node = await this.ckdPriv(node, i); trace.push(node); }
+    return { node, trace };
+  },
+  // address = last 20 bytes of Keccak-256(uncompressed public key without 0x04)
+  addressFromPriv(k) {
+    const pub = EC.mul(k);
+    const h = Keccak.keccak256(EC.uncompressed(pub));
+    return { pub, hash: h, address: hex(h.slice(12)) };
+  },
+  // EIP-55: uppercase hex letter i when nibble i of Keccak-256(lowercase address) >= 8
+  checksum(addrLower) {
+    const a = addrLower.toLowerCase().replace(/^0x/, "");
+    const h = hex(Keccak.keccak256(utf8(a)));
+    let out = "0x";
+    for (let i = 0; i < 40; i++) out += parseInt(h[i], 16) >= 8 ? a[i].toUpperCase() : a[i];
+    return out;
+  },
+  isValidChecksum(addr) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) return false;
+    return this.checksum(addr.slice(2).toLowerCase()) === addr;
+  },
+};
+
+// ---------- BIP-39 mnemonic generation / checksum (needs the 2048-word list) ----------
+const Bip39 = {
+  async entropyToMnemonic(entropy, words) {
+    const h = await sha256(entropy);
+    const bits = Array.from(entropy, (b) => b.toString(2).padStart(8, "0")).join("") +
+      h[0].toString(2).padStart(8, "0").slice(0, entropy.length / 4);
+    const out = [];
+    for (let i = 0; i < bits.length; i += 11) out.push(words[parseInt(bits.slice(i, i + 11), 2)]);
+    return out.join(" ");
+  },
+  async checkMnemonic(mnemonic, words) {
+    const ws = mnemonic.trim().split(/\s+/);
+    if (![12, 15, 18, 21, 24].includes(ws.length)) return { ok: false, why: "word count must be 12/15/18/21/24" };
+    const idx = ws.map((w) => words.indexOf(w));
+    if (idx.includes(-1)) return { ok: false, why: "unknown word: " + ws[idx.indexOf(-1)] };
+    const bits = idx.map((i) => i.toString(2).padStart(11, "0")).join("");
+    const cs = ws.length / 3, entBits = bits.length - cs;
+    const ent = new Uint8Array(entBits / 8);
+    for (let i = 0; i < ent.length; i++) ent[i] = parseInt(bits.slice(8 * i, 8 * i + 8), 2);
+    const h = await sha256(ent);
+    const ok = h[0].toString(2).padStart(8, "0").slice(0, cs) === bits.slice(entBits);
+    return { ok, why: ok ? "checksum valid" : "checksum bits do not match" };
+  },
+};
+
+if (typeof module !== "undefined") module.exports = { hex, unhex, utf8, concatBytes, bigToBytes, bytesToBig, Keccak, EC, Wallet, Bip39, sha256, sha512, hmacSha512 };
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+
+// ---------------- texts (written for this homework) ----------------
+const CORPUS = `Every morning the old harbour wakes slowly. The fishermen check their nets while the gulls circle above the boats, and the smell of salt and diesel drifts over the market square. Most of the people who live here have never thought about cryptography, yet every card payment at the bakery and every message sent from the café relies on mathematics that was considered exotic only fifty years ago.
+When we study a cipher we want to know two things: how much effort the honest user needs, and how much effort the attacker needs. A good system makes the first number small and the second number astronomically large. A bad system makes both numbers small, and the history of secret writing is full of bad systems that their inventors believed to be unbreakable.
+The simplest example is the cipher attributed to Julius Caesar. Each letter of the message is replaced by the letter that stands a fixed number of places further along the alphabet. With a shift of three, the word attack becomes dwwdfn, and the receiver simply shifts every letter back. The method is easy to remember and fast to apply by hand, which explains why it was used for centuries in letters, diaries and even military orders.
+Its weakness is just as easy to explain. There are only twenty six possible shifts, so a patient reader can try all of them in a few minutes. Even worse, the cipher does not hide the statistics of the language. In ordinary English text the letter e is by far the most common, followed by t, a, o, i and n, while letters such as q, x and z are rare. A shift moves these peaks to other letters but keeps their shape, so a single glance at a frequency table often reveals the key.
+Modern ciphers are designed so that the output looks like random noise. If you count the bytes of a well encrypted file you find that every value appears about equally often, and no pattern survives that could point to the key. The security then rests on the size of the key space and on the difficulty of some mathematical problem, such as factoring large numbers or computing discrete logarithms on an elliptic curve.
+Elliptic curves became popular because they offer strong security with short keys. A private key is just a large random number, and the public key is a point obtained by adding a fixed base point to itself that many times, using a clever method of doubling and adding. Going forward is quick, but going backward, from the point to the number, is believed to be infeasible when the numbers have about two hundred and fifty six bits.
+However, mathematics alone does not guarantee safety. If the private key is chosen from a tiny range, an attacker can simply walk along the multiples of the base point until one of them matches the public key. The curve is still strong, the formulas are still correct, but the secret is small enough to be guessed. Many real incidents in the history of computer security were caused by weak random number generators rather than by broken algorithms.
+Students often ask why we spend time on ciphers that nobody uses anymore. The answer is that broken systems teach us what security really means. The Caesar cipher shows that hiding the letters is not enough when the patterns of the language remain visible. A toy elliptic curve scheme with a short key shows that a strong design can still fail when the key space is small. Together they show that cryptography is a careful balance between mathematics, statistics and engineering, and that the attacker will always look for the weakest link.
+In the evening the harbour is quiet again. The boats return, the lights of the café go on, and somewhere a phone quietly signs a transaction with a key that nobody, not even the person holding the phone, has ever seen written down. The mathematics works because it was designed by people who studied how earlier systems were broken, and who learned to measure security in numbers rather than in hopes.`;
+const HELDOUT = `The train left the station a few minutes late, and the passengers settled into their seats with coffee and newspapers. A young engineer opened her laptop and began to read a report about a network that had been attacked during the night. The intruders had not broken any encryption. Instead they had found an old server that still accepted a default password, and from there they had moved quietly from machine to machine. She sighed, because the same story appeared again and again. Security is rarely defeated by brilliant mathematics; it is usually defeated by small mistakes that nobody noticed. Outside the window the fields turned from green to gold, a river appeared and disappeared behind the trees, and the train crossed a long bridge over a valley full of fog. She wrote a short list of recommendations: change every default password, keep the software updated, collect the logs in one place and read them every morning. None of these steps required a new algorithm, only discipline and time. When the train finally arrived in the city she closed the laptop, finished her cold coffee and walked toward the office, thinking that the most important skill in her profession was not knowing how ciphers work but knowing where people forget to use them. The meeting began with bad news and ended with a plan, which is how most good meetings end. In the afternoon the team tested the backups, discovered that one of them could not be restored, and fixed it before anyone needed it. Nobody would ever thank them for the disaster that did not happen, but that is the quiet reward of defensive work.`;
+const COMMON = new Set("the of and to in a is that for it as was with be by on not he i this are or his from at which but have an they you were her she there one all we their has been would will what if can when so no said who more about up out them some could into time only new other than then now my like over also after did back where most should these well just any because those people way even many before must through down being how might each very same while both under never again work few use day here too still off last own long find good little great know give made think say see world thought take part between come show want three found two every number first point move set right why year high know how much such once both often".split(/\s+/));
+const PUBLISHED = { a: 8.17, b: 1.29, c: 2.78, d: 4.25, e: 12.70, f: 2.23, g: 2.02, h: 6.09, i: 6.97, j: 0.15, k: 0.77, l: 4.03, m: 2.41, n: 6.75, o: 7.51, p: 1.93, q: 0.10, r: 5.99, s: 6.33, t: 9.06, u: 2.76, v: 0.98, w: 2.36, x: 0.15, y: 1.97, z: 0.07 };
+
+// ---------------- §1 toy ECC ----------------
+const rand256 = () => EC.mod(bytesToBig(crypto.getRandomValues(new Uint8Array(32))), EC.N - 1n) + 1n;
+let KEY = null, CT = null;
+function keygen() {
+  const b = Math.min(40, Math.max(4, +$("b").value | 0));
+  let d; do { d = bytesToBig(crypto.getRandomValues(new Uint8Array(8))) % (1n << BigInt(b)); } while (d === 0n);
+  KEY = { b, d, Q: EC.mul(d) };
+  $("keys").innerHTML = `private key d = ${KEY.d}  (${b}-bit range, kept secret)\npublic key  Q = dG\n  x = ${KEY.Q.x.toString(16).padStart(64, "0")}\n  y = ${KEY.Q.y.toString(16).padStart(64, "0")}`;
+  $("ks").innerHTML = `2<sup>${b}</sup>−1 ≈ ${(2 ** b).toExponential(2)} here (${b} bits); n ≈ 2<sup>256</sup> for a real key`;
+  CT = null;
+}
+async function keystream(S, len) {
+  const out = new Uint8Array(len), sx = bigToBytes(S.x);
+  for (let i = 0, off = 0; off < len; i++, off += 32) {
+    const blk = await sha256(concatBytes(utf8("HW2"), sx, new Uint8Array([i >> 24, (i >> 16) & 255, (i >> 8) & 255, i & 255])));
+    out.set(blk.slice(0, Math.min(32, len - off)), off);
+  }
+  return out;
+}
+const xor = (a, b) => a.map((v, i) => v ^ b[i]);
+async function encrypt(M, Q) { const r = rand256(); const C1 = EC.mul(r), S = EC.mul(r, Q); return { r, C1, C2: xor(M, await keystream(S, M.length)) }; }
+async function decrypt(C1, C2, d) { const S = EC.mul(d, C1); return xor(C2, await keystream(S, C2.length)); }
+function chi2bytes(u8) { const c = new Array(16).fill(0); for (const b of u8) { c[b >> 4]++; c[b & 15]++; } const e = (2 * u8.length) / 16; return c.reduce((s, o) => s + (o - e) ** 2 / e, 0); }
+async function encDemo() {
+  if (!KEY) keygen();
+  const M = utf8($("msg").value);
+  CT = await encrypt(M, KEY.Q);
+  const M2 = await encrypt(M, KEY.Q);
+  const back = new TextDecoder().decode(await decrypt(CT.C1, CT.C2, KEY.d));
+  $("encout").innerHTML = `ephemeral r (sender only) = ${CT.r.toString(16).slice(0, 24)}…\nC₁ = rG  x = ${CT.C1.x.toString(16).padStart(64, "0")}\nC₂ = M ⊕ stream = ${hex(CT.C2)}\n\nsame message encrypted again → C₂′ = ${hex(M2.C2).slice(0, 48)}… (different: randomised)\nnibble χ² of C₂ (15 d.f.) = ${chi2bytes(CT.C2).toFixed(1)}  vs plaintext ${chi2bytes(M).toFixed(1)}  → ciphertext looks uniform\n\ndecrypt with d: <b>${back.replace(/</g, "&lt;")}</b>  ${back === $("msg").value ? '<span class="good">✓ recovered</span>' : '<span class="bad">✗</span>'}`;
+  caesarDemo();
+}
+$("keygen").onclick = () => { keygen(); encDemo(); };
+$("enc").onclick = encDemo;
+
+// ---------------- §2 Caesar ----------------
+const caesar = (s, k) => s.replace(/[a-z]/gi, (c) => { const A = c <= "Z" ? 65 : 97; return String.fromCharCode(((c.charCodeAt(0) - A + k) % 26 + 26) % 26 + A); });
+const letterCounts = (s) => { const c = new Array(26).fill(0); for (const ch of s.toLowerCase()) { const i = ch.charCodeAt(0) - 97; if (i >= 0 && i < 26) c[i]++; } return c; };
+function caesarDemo() {
+  const s = +$("shift").value; $("shiftv").textContent = s;
+  const m = $("msg").value, c = caesar(m, s), back = caesar(c, -s);
+  $("caesarout").textContent = `plaintext : ${m}\nciphertext: ${c}\ndecrypted : ${back}`;
+  const longText = CORPUS.slice(0, 1500);
+  const p = letterCounts(longText), q = letterCounts(caesar(longText, s));
+  const tot = p.reduce((a, b) => a + b, 0);
+  Plot.bars($("cfreq"), { labels: "abcdefghijklmnopqrstuvwxyz".split(""), groups: [{ values: p.map((v) => v / tot), label: "plaintext letters" }, { values: q.map((v) => v / tot), label: `ciphertext letters (shift ${s})` }], title: "Letter frequencies on 1500 characters: the profile is only rotated" });
+}
+$("shift").oninput = caesarDemo; $("msg").oninput = caesarDemo;
+
+// ---------------- §4 cryptanalysis ----------------
+let MODEL = null;
+function buildModel() {
+  const text = ($("corpus").value || CORPUS).toLowerCase();
+  let uni = letterCounts(text).map((v) => v + 1);
+  if ($("ref").value === "table") uni = "abcdefghijklmnopqrstuvwxyz".split("").map((c) => PUBLISHED[c] * 100);
+  const U = uni.reduce((a, b) => a + b, 0);
+  const p1 = uni.map((v) => v / U);
+  const bi = Array.from({ length: 27 }, () => new Array(27).fill(1)); // 26 = word boundary
+  const toks = text.replace(/[^a-z]+/g, " ").trim();
+  let prev = 26;
+  for (const ch of toks) { const i = ch === " " ? 26 : ch.charCodeAt(0) - 97; bi[prev][i]++; prev = i; }
+  const p2 = bi.map((row) => { const s = row.reduce((a, b) => a + b, 0); return row.map((v) => Math.log(v / s)); });
+  MODEL = { p1, logp1: p1.map(Math.log), p2 };
+}
+function scores(cipher) {
+  const out = [];
+  for (let s = 0; s < 26; s++) {
+    const pt = caesar(cipher, -s), c = letterCounts(pt), n = c.reduce((a, b) => a + b, 0) || 1;
+    let chi = 0, ll = 0;
+    for (let i = 0; i < 26; i++) { const e = n * MODEL.p1[i]; chi += (c[i] - e) ** 2 / e; ll += c[i] * MODEL.logp1[i]; }
+    let bl = 0, prev = 26;
+    for (const ch of pt.toLowerCase().replace(/[^a-z]+/g, " ").trim()) { const i = ch === " " ? 26 : ch.charCodeAt(0) - 97; bl += MODEL.p2[prev][i]; prev = i; }
+    const words = pt.toLowerCase().match(/[a-z]+/g) || [];
+    const dict = words.filter((w) => COMMON.has(w)).length;
+    out.push({ s, pt, chi, ll, bl, dict });
+  }
+  return out;
+}
+const best = (S, key, max) => S.reduce((a, b) => ((max ? b[key] > a[key] : b[key] < a[key]) ? b : a)).s;
+function crack() {
+  buildModel();
+  const S = scores($("ct").value);
+  const order = [...S].sort((a, b) => a.chi - b.chi);
+  $("ranktab").innerHTML = "<tr><th>rank</th><th>s</th><th>χ²</th><th>bigram LL</th><th>dict words</th><th>candidate</th></tr>" +
+    order.slice(0, 6).map((r, i) => `<tr><td>${i + 1}</td><td>${r.s}</td><td>${r.chi.toFixed(1)}</td><td>${r.bl.toFixed(0)}</td><td>${r.dict}</td><td class="mono">${r.pt.slice(0, 38)}…</td></tr>`).join("");
+  Plot.bars($("cscore"), { labels: S.map((r) => String(r.s)), groups: [{ values: S.map((r) => 1 / r.chi), label: "1/χ² (higher = more English-like)" }], title: "Score of each candidate shift", xlabel: "shift s" });
+  const k = { chi: best(S, "chi", false), ll: best(S, "ll", true), bl: best(S, "bl", true), dict: best(S, "dict", true) };
+  $("crackout").textContent = `χ² → s = ${k.chi} | unigram LL → s = ${k.ll} | bigram LL → s = ${k.bl} | dictionary → s = ${k.dict}\nrecovered plaintext (χ²): ${caesar($("ct").value, -k.chi)}`;
+}
+$("crack").onclick = crack;
+$("ref").onchange = crack;
+$("showcorpus").onclick = () => { const t = $("corpus"); t.style.display = t.style.display === "none" ? "block" : "none"; if (!t.value) t.value = CORPUS; };
+
+// ---------------- §5 length experiment ----------------
+async function runExp() {
+  buildModel();
+  const T = Math.max(20, +$("trials").value | 0), rng = makeRng(2026);
+  const lens = [3, 5, 8, 12, 16, 20, 30, 40, 60, 80, 120, 200];
+  const letters = HELDOUT;
+  const keys = ["chi", "ll", "bl", "dict"], names = { chi: "χ² unigram", ll: "unigram log-likelihood", bl: "bigram log-likelihood", dict: "exhaustive + dictionary" };
+  const succ = Object.fromEntries(keys.map((k) => [k, []]));
+  for (const L of lens) {
+    const ok = Object.fromEntries(keys.map((k) => [k, 0]));
+    for (let t = 0; t < T; t++) {
+      // random window containing exactly L letters
+      let start = Math.floor(rng() * (letters.length - 4 * L - 10)), seg = "", cnt = 0;
+      for (let i = start; cnt < L && i < letters.length; i++) { seg += letters[i]; if (/[a-z]/i.test(letters[i])) cnt++; }
+      const s = 1 + Math.floor(rng() * 25), S = scores(caesar(seg, s));
+      for (const k of keys) if (best(S, k, k !== "chi") === s) ok[k]++;
+    }
+    for (const k of keys) succ[k].push(ok[k] / T);
+    $("expmsg").textContent = `length ${L} done`; await new Promise((r) => setTimeout(r));
+  }
+  Plot.line($("cexp"), { series: keys.map((k) => ({ x: lens, y: succ[k], label: names[k], points: true, connect: true })), xlog: true, yr: [0, 1.18], title: `Key-recovery success rate (${T} random texts per length)`, xlabel: "number of letters in the ciphertext", ylabel: "success rate" });
+  $("exptab").innerHTML = "<table><tr><th>letters</th>" + lens.map((l) => `<th>${l}</th>`).join("") + "</tr>" + keys.map((k) => `<tr><td>${names[k]}</td>${succ[k].map((v) => `<td>${(100 * v).toFixed(0)}%</td>`).join("")}</tr>`).join("") + "</table>";
+  $("expmsg").textContent = "";
+}
+$("runexp").onclick = runExp;
+
+// ---------------- §6 restricted key attack ----------------
+const tick = () => new Promise((r) => setTimeout(r));
+async function bruteForce(Q, b, onProg) {
+  const max = 1n << BigInt(b);
+  let J = EC.toJ(EC.G), k = 1n;
+  const t0 = performance.now();
+  while (k < max) {
+    if (EC.eqJA(J, Q)) return { d: k, ops: k, ms: performance.now() - t0 };
+    J = EC.addMixed(J, EC.G); k++;
+    if ((k & 4095n) === 0n) { onProg && onProg(Number(k) / Number(max)); await tick(); }
+  }
+  return { d: null, ops: k, ms: performance.now() - t0 };
+}
+async function bsgs(Q, b, onProg) {
+  const t0 = performance.now();
+  const m = BigInt(Math.ceil(2 ** (b / 2)));
+  const table = new Map();
+  let P = null;
+  for (let j = 1n; j <= m; j++) { P = EC.add(P, EC.G); table.set(P.x, j); if ((j & 2047n) === 0n) { onProg && onProg(0.5 * Number(j) / Number(m)); await tick(); } }
+  // table holds x(jG) for j = 1..m; x(jG) = x(-jG) so check both signs
+  const negMG = EC.neg(EC.mul(m));
+  let R = Q;
+  for (let i = 0n; i <= m + 1n; i++) {
+    if (R === null) return { d: i * m, ops: m + i, ms: performance.now() - t0 };
+    const j = table.get(R.x);
+    if (j !== undefined) {
+      for (const cand of [i * m + j, i * m - j]) if (cand > 0n && EC.eq(EC.mul(cand), Q)) return { d: cand, ops: m + i, ms: performance.now() - t0 };
+    }
+    R = EC.add(R, negMG);
+    if ((i & 2047n) === 0n) { onProg && onProg(0.5 + 0.5 * Number(i) / Number(m)); await tick(); }
+  }
+  return { d: null, ops: 2n * m, ms: performance.now() - t0 };
+}
+async function attack(kind) {
+  if (!KEY || !CT) await encDemo();
+  $("atkout").textContent = `searching (b = ${KEY.b})…`;
+  const res = await (kind === "brute" ? bruteForce : bsgs)(KEY.Q, KEY.b, (f) => ($("prog").value = f));
+  $("prog").value = 1;
+  if (res.d === null) { $("atkout").textContent = "not found"; return; }
+  const M = new TextDecoder().decode(await decrypt(CT.C1, CT.C2, res.d));
+  $("atkout").innerHTML = `${kind === "brute" ? "exhaustive search" : "baby-step giant-step"}: d = ${res.d} found after ${res.ops} group operations in ${(res.ms / 1000).toFixed(2)} s  ${res.d === KEY.d ? '<span class="good">✓ correct key</span>' : ""}\ndecrypted with the recovered key: <b>${M.replace(/</g, "&lt;")}</b>`;
+}
+$("brute").onclick = () => attack("brute");
+$("bsgs").onclick = () => attack("bsgs");
+async function scaling() {
+  const bs = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26], tb = [], tg = [];
+  for (const b of bs) {
+    let d; do { d = bytesToBig(crypto.getRandomValues(new Uint8Array(8))) % (1n << BigInt(b)); } while (d === 0n);
+    const Q = EC.mul(d);
+    if (b <= 18) { const r = await bruteForce(Q, b); tb.push(r.ms / 1000); } else tb.push(NaN);
+    const r2 = await bsgs(Q, b); tg.push(r2.ms / 1000);
+    $("costtxt").textContent = `measured b = ${b}`;
+  }
+  // rate of point additions per second from the brute-force runs
+  const t0 = performance.now(); let J = EC.toJ(EC.G); for (let i = 0; i < 20000; i++) J = EC.addMixed(J, EC.G); const rate = 20000 / ((performance.now() - t0) / 1000);
+  Plot.line($("ccost"), { series: [{ x: bs, y: tb, label: "exhaustive search (one random key)", points: true, connect: true }, { x: bs, y: tg, label: "baby-step giant-step", points: true, connect: true }, { x: bs, y: bs.map((b) => 2 ** (b - 1) / rate), label: "expected exhaustive 2^(b−1)/rate", dash: [5, 4] }], ylog: true, title: "Time to recover d (seconds, log scale)", xlabel: "key size b (bits)" });
+  const yrs = (ops) => ops / rate / 3.156e7;
+  $("costtxt").innerHTML = `<p>Measured speed in this browser: ≈ ${rate.toFixed(0)} point additions per second. Extrapolation for a real 256-bit key: exhaustive search 2<sup>255</sup> additions ≈ ${yrs(2 ** 255).toExponential(1)} years; BSGS/Pollard rho 2<sup>128</sup> ≈ ${yrs(2 ** 128).toExponential(1)} years (the universe is about 1.4·10<sup>10</sup> years old). BSGS would also need 2<sup>128</sup> stored points, far more than all the storage on Earth.</p>`;
+}
+$("scaling").onclick = scaling;
+
+$("flip").onclick = async () => {
+  if (!CT) await encDemo();
+  const bit = Math.max(0, Math.min(CT.C2.length * 8 - 1, +$("flipbit").value | 0));
+  const C2 = CT.C2.slice(); C2[bit >> 3] ^= 0x80 >> (bit & 7);
+  const M = new TextDecoder().decode(await decrypt(CT.C1, C2, KEY.d));
+  $("flipout").textContent = `tampered C₂ decrypts without any error to:\n${M}\n(bit ${bit} of the plaintext flipped; the receiver cannot detect it because there is no MAC)`;
+};
+
+// ---------------- init ----------------
+keygen();
+$("ct").value = caesar("Statistics can break a cipher when the cipher does not hide the patterns of the language it encrypts.", 11);
+encDemo().then(crack);
+</script>
+</body>
+</html>
